@@ -1,30 +1,43 @@
-// Kit do estilo pelúcia: cascos de feltro estufados nas cores das peças, peles
-// creme com costura em volta do aro, pratos de feltro dourado, estantes de
-// corda grossa e sombras borradas no chão. Mesmos frames e pontos de contato
-// do kit do manequim (pieces.js); no golpe a pele afunda, o casco amassa e o
-// prato balança molenga, voltando ao lugar antes do golpe seguinte.
+// Kit do estilo pelúcia: cascos de feltro estufados nas cores das peças, com o
+// aro arredondado fazendo parte do mesmo torno (sem argola solta), peles
+// creme com costura, pratos de feltro dourado, estantes de corda grossa e
+// sombras borradas no chão. Mesmos frames e pontos de contato do kit do
+// manequim (pieces.js); no golpe a pele afunda, o casco amassa e o prato
+// balança molenga, voltando ao lugar antes do golpe seguinte.
+//
+// Tudo o que é opaco sai num draw call só: uma SkinnedMesh em que cada parte
+// que se mexe (corpo e pele de cada tambor, prato, pedal, batedor) é um osso e
+// cada vértice aponta pra uma cor da tabela (felt.js). As sombras são outra
+// malha e os anéis de antecipação uma InstancedMesh.
 
 import {
-  Color, CylinderGeometry, Group, InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, Object3D,
-  PlaneGeometry, Quaternion, SphereGeometry, TorusGeometry, Vector3,
+  Bone, BufferAttribute, BufferGeometry, Color, CylinderGeometry, DoubleSide, Group, InstancedBufferAttribute,
+  InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, Object3D, Quaternion, RingGeometry, Skeleton, SkinnedMesh,
+  SphereGeometry, TorusGeometry, Vector3,
 } from "../vendor/three.module.min.js";
 import { CYMBALS, DRUMS, HIHAT_PEDAL, KICK, KICK_PEDAL, THRONE } from "./layout.js";
 import { beaterAngle, cymbalProfile, pedalAngle, placeFrame, standRods } from "./pieces.js";
-import { INSTANCE_PIECE } from "./timeline.js";
+import { INSTANCE_PIECE, upperBound } from "./timeline.js";
 import { flash, footPress } from "./motion.js";
 import { softWobble } from "./plushmotion.js";
-import { createRings, updateRings } from "./rings.js";
-import { feltMaterial, setFelt } from "./felt.js";
-import {
-  aroundUnits, cushionProfile, ellipsoid, lathe, mergeGeos, pillow, planarUV, scaleUV, stitchGeometry,
-  stitchLine, stitchMesh,
-} from "./shapes.js";
+import { RINGS_PER_PIECE } from "./rings.js";
+import { plushMaterial, setSlot, setSlotEmissive } from "./felt.js";
+import { cushionProfile, ellipsoid, lathe, mergeSkinned, pillow, stitchGeometry, stitchLine } from "./shapes.js";
 
 const UP = new Vector3(0, 1, 0);
 // Prato molenga: amplitude (rad), amortecimento (s), frequência (Hz).
 const FLOP = { crash: [0.15, 0.5, 1.7], ride: [0.065, 0.42, 2.1], hihat: [0.028, 0.14, 4.2] };
 const SQUASH = { tau: 0.07, freq: 5.5, dip: 0.007 }; // dip: quanto a pele desce (m) num golpe forte
 const CYM_T = 0.009; // espessura do prato de feltro
+
+const DRUM_IDS = ["snare", "tom1", "tom2", "floor", "kick"];
+const CYM_IDS = ["hihat", "crash", "ride"];
+// slots da paleta
+const SL = {};
+DRUM_IDS.forEach((id, i) => { SL[`shell_${id}`] = i * 3; SL[`hoop_${id}`] = i * 3 + 1; SL[`head_${id}`] = i * 3 + 2; });
+CYM_IDS.forEach((id, i) => { SL[`gold_${id}`] = 15 + i * 2; SL[`accent_${id}`] = 16 + i * 2; });
+Object.assign(SL, { rope: 21, pad: 22, seat: 23, ball: 24, thread: 25 });
+const SLOTS = 26;
 
 // Altura da face de cima do prato: cúpula suave até ρ = 0.07 e depois o mesmo
 // arco reto do perfil lógico, onde as baquetas encostam.
@@ -51,130 +64,112 @@ function cymbalBodyProfile(r) {
   return pts;
 }
 
-export function createPlushKit(tex) {
+/** Arco de círculo no perfil (ângulos em graus, 0 = pra fora, 90 = pra cima). */
+function bead(pts, cx, cy, rad, a0, a1, slot, n = 8) {
+  for (let k = 0; k <= n; k++) {
+    const a = ((a0 + ((a1 - a0) * k) / n) * Math.PI) / 180;
+    pts.push([cx + rad * Math.cos(a), cy + rad * Math.sin(a), slot]);
+  }
+}
+
+/**
+ * Casco + aros num torno só (y = 0 no plano da pele, casco até -depth): fundo,
+ * aro de baixo, casco estufado, aro de cima por cima da borda da pele.
+ */
+function drumProfile(r, depth, { bottom, hoop, shell }, beadR = 0.0125, topR = 0.0135) {
+  const pts = [], yb = -depth - 0.002;
+  for (const f of [0, 0.45, 0.75, 0.9]) pts.push([r * f, yb - 0.004 * (1 - f * f), bottom]);
+  bead(pts, r + 0.002, -depth + beadR - 0.001, beadR, -120, 95, hoop);
+  for (let k = 1; k <= 7; k++) {
+    const u = k / 8;
+    pts.push([r + 0.006 + 0.005 * Math.sin(Math.PI * u), -depth + 2 * beadR + (depth - 2 * beadR - 0.016) * u, shell]);
+  }
+  bead(pts, r + 0.001, -0.001, topR, -95, 215, hoop, 12);
+  return pts;
+}
+
+/** Pele: do lado de dentro do aro até o centro, bem pouco abaulada. */
+const headProfile = (r, slot) => [[r * 0.975, -0.009, slot], [r * 0.958, -0.0025, slot], [r * 0.92, 0.0004, slot], [r * 0.5, 0.0006, slot], [0, 0.0006, slot]];
+
+// Cilindro aberto com coordenada de corda (uma volta em u, hélice a ~50°).
+function ropeGeometry(r, len) {
+  const g = new CylinderGeometry(r, r, len, 8, Math.max(1, Math.round(len / 0.09)), true);
+  const uv = g.attributes.uv, k = len / (0.56 * 2 * Math.PI * r), puv = new Float32Array(uv.count * 2);
+  for (let i = 0; i < uv.count; i++) { puv[i * 2] = uv.getX(i); puv[i * 2 + 1] = uv.getY(i) * k; }
+  g.setAttribute("puv", new BufferAttribute(puv, 2));
+  return g;
+}
+
+export function createPlushKit() {
   const group = new Group();
   group.name = "kit-pelucia";
-  const disposables = [];
-  const keep = (x) => { disposables.push(x); return x; };
-
-  const ropeMat = keep(feltMaterial(tex, { map: tex.rope, sheenMix: 0.4, normalScale: 0.9 }));
-  ropeMat.normalMap = tex.ropeNormal;
-  const padMat = keep(feltMaterial(tex, { sheenMix: 0.35 }));
-  const seatMat = keep(feltMaterial(tex, { sheenMix: 0.4 }));
-  const ballMat = keep(feltMaterial(tex, { sheenMix: 0.3 }));
-  const threadMat = keep(new MeshStandardMaterial({ roughness: 0.85 }));
-  const stitchGeo = keep(stitchGeometry());
+  const bones = [];
+  const bone = (parent) => { const b = new Bone(); parent.add(b); bones.push(b); return b; };
+  const root = bone(group);
   const frameOf = (id) => { const f = placeFrame(id, new Group()); group.add(f); return f; };
+  const parts = [];
+  const add = (geo, b, slot) => { parts.push({ geo, bone: bones.indexOf(b), slot, local: true, owner: b }); return geo; };
   const inst = {};
+  const rings = [];
 
-  // costura em volta de um círculo no plano y = h (no espaço de quem a recebe)
-  function ringStitches(r, y, out = []) {
-    return stitchLine((s, P, N) => {
-      const a = s * Math.PI * 2;
-      P.set(r * Math.cos(a), y, r * Math.sin(a));
-      N.set(0, 1, 0);
-      return P;
-    }, 2 * Math.PI * r, out, { closed: true });
-  }
+  // costura em volta de um círculo no plano y = h
+  const ringStitches = (r, y) => stitchGeometry(stitchLine((s, P, N) => {
+    const a = s * Math.PI * 2;
+    P.set(r * Math.cos(a), y, r * Math.sin(a));
+    N.set(0, 1, 0);
+    return P;
+  }, 2 * Math.PI * r, [], { closed: true }));
 
   // ---------- tambores ----------
-  function drumHeadGeo(r) {
-    const g = lathe([[r * 0.975, -0.009], [r * 0.958, -0.0025], [r * 0.92, 0.0004], [r * 0.5, 0.0006], [0, 0.0006]], 48);
-    return planarUV(g, 0, 2);
-  }
-  function hoopGeo(r, tube) {
-    const g = new TorusGeometry(r, tube, 6, 36);
-    scaleUV(g, aroundUnits(2 * Math.PI * r), aroundUnits(2 * Math.PI * tube));
-    g.rotateX(Math.PI / 2);
-    return g;
-  }
   for (const [id, d] of Object.entries(DRUMS)) {
     const frame = frameOf(id);
-    const shellMat = keep(feltMaterial(tex, { sheenMix: 0.45 }));
-    const headMat = keep(feltMaterial(tex, { sheenMix: 0.3 }));
-    const hoopMat = keep(feltMaterial(tex, { sheenMix: 0.45 }));
     const squash = new Group(); // apoiado no fundo: no golpe o topo desce
     squash.position.y = -d.depth;
     frame.add(squash);
-    const body = new Group();
+    const body = bone(squash);
     body.position.y = d.depth;
-    squash.add(body);
-    body.add(new Mesh(keep(lathe(cushionProfile(d.r + 0.006, -d.depth - 0.004, -0.006, 5, 18), 40)), shellMat));
-    const head = new Mesh(keep(drumHeadGeo(d.r)), headMat);
-    body.add(head);
-    head.add(keep(stitchMesh(stitchGeo, threadMat, ringStitches(d.r * 0.86, 0.0006))));
-    const hg = keep(hoopGeo(d.r * 0.99, 0.0135));
-    const top = new Mesh(hg, hoopMat);
-    top.position.y = 0.0008;
-    // debrum de baixo encostado na curva do casco (não fica boiando)
-    const bottom = new Mesh(keep(hoopGeo(d.r + 0.004, 0.01)), hoopMat);
-    bottom.position.y = -d.depth + 0.014;
-    body.add(top, bottom);
-    inst[id] = {
-      id, kind: "drum", piece: INSTANCE_PIECE[id], frame, squash, head, depth: d.depth,
-      shellMat, headMat, hoopMat, rings: createRings(frame, d.r, 0.016, keep),
-    };
+    const head = bone(body);
+    const s = { bottom: SL[`shell_${id}`], hoop: SL[`hoop_${id}`], shell: SL[`shell_${id}`] };
+    add(lathe(drumProfile(d.r, d.depth, s), 44), body);
+    add(lathe(headProfile(d.r, SL[`head_${id}`]), 44), head);
+    for (const g of ringStitches(d.r * 0.86, 0.0009)) add(g, head, SL.thread);
+    inst[id] = { id, kind: "drum", piece: INSTANCE_PIECE[id], frame, squash, head, depth: d.depth };
+    rings.push({ id, frame, r: d.r, y: 0.016 });
   }
 
   // ---------- bumbo ----------
   {
     const frame = frameOf("kick"); // y local = pro baterista
-    const shellMat = keep(feltMaterial(tex, { sheenMix: 0.45 }));
-    const headMat = keep(feltMaterial(tex, { sheenMix: 0.3 }));
-    const hoopMat = keep(feltMaterial(tex, { sheenMix: 0.45 }));
     const squash = new Group(); // apoiado na pele da frente: no golpe a de trás afunda
     squash.position.y = -KICK.depth;
     frame.add(squash);
-    const body = new Group();
+    const body = bone(squash);
     body.position.y = KICK.depth;
-    squash.add(body);
-    body.add(new Mesh(keep(lathe(cushionProfile(KICK.r + 0.01, -KICK.depth + 0.002, -0.002, 7, 20), 44)), shellMat));
-    const hg = keep(drumHeadGeo(KICK.r));
-    const batter = new Mesh(hg, headMat);
-    batter.add(keep(stitchMesh(stitchGeo, threadMat, ringStitches(KICK.r * 0.88, 0.0006))));
-    const reso = new Mesh(hg, headMat);
-    reso.rotation.x = Math.PI;
-    reso.position.y = -KICK.depth;
-    reso.add(keep(stitchMesh(stitchGeo, threadMat, ringStitches(KICK.r * 0.88, 0.0006))));
-    body.add(batter, reso);
-    const kh = keep(hoopGeo(KICK.r * 0.995, 0.02));
-    for (const y of [0.002, -KICK.depth - 0.002]) {
-      const h = new Mesh(kh, hoopMat);
-      h.position.y = y;
-      body.add(h);
+    const batter = bone(body);
+    const s = { bottom: SL.head_kick, hoop: SL.hoop_kick, shell: SL.shell_kick };
+    add(lathe(drumProfile(KICK.r, KICK.depth, s, 0.02, 0.02), 48), body);
+    add(lathe(headProfile(KICK.r, SL.head_kick), 48), batter);
+    for (const g of ringStitches(KICK.r * 0.88, 0.0009)) add(g, batter, SL.thread);
+    // pele da frente: costura e patinha (almofada + 4 dedos) pra quem olha de frente
+    const yf = -KICK.depth - 0.0062, ys = -KICK.depth - 0.002 - 0.004 * (1 - 0.88 * 0.88) - 0.0006;
+    for (const g of ringStitches(KICK.r * 0.88, 0)) add(g.rotateX(Math.PI).translate(0, ys, 0), body, SL.thread);
+    const pad = (x, z, rx, rz) => add(ellipsoid(rx, 0.006, rz, 20, 8).translate(x, yf, -z), body, SL.hoop_kick);
+    pad(0, 0.045, 0.072, 0.058);
+    for (const [x, z, k] of [[-0.085, -0.03, 0.026], [-0.032, -0.075, 0.028], [0.032, -0.075, 0.028], [0.085, -0.03, 0.026]]) {
+      pad(x, z, k, k * 1.15);
     }
-    // patinha na pele da frente (pra quem olha de frente): almofada + 4 dedos
-    const paw = [];
-    const add = (x, z, rx, rz) => {
-      const g = ellipsoid(rx, 0.006, rz, { w: 20, h: 8 });
-      g.translate(x, 0, z);
-      paw.push(g);
-    };
-    add(0, 0.045, 0.072, 0.058);
-    for (const [x, z, s] of [[-0.085, -0.03, 0.026], [-0.032, -0.075, 0.028], [0.032, -0.075, 0.028], [0.085, -0.03, 0.026]]) {
-      add(x, z, s, s * 1.15);
-    }
-    const logo = new Mesh(keep(mergeGeos(paw)), hoopMat);
-    logo.position.set(0, 0.002, 0);
-    reso.add(logo);
-    inst.kick = {
-      id: "kick", kind: "kick", piece: "kick", frame, squash, head: batter, depth: KICK.depth,
-      shellMat, headMat, hoopMat, rings: createRings(frame, KICK.r, 0.032, keep),
-    };
+    inst.kick = { id: "kick", kind: "kick", piece: "kick", frame, squash, head: batter, depth: KICK.depth };
+    rings.push({ id: "kick", frame, r: KICK.r, y: 0.032 });
   }
 
   // ---------- pratos ----------
   for (const [id, c] of Object.entries(CYMBALS)) {
     const frame = frameOf(id);
-    const pivot = new Group(); // balanço
-    frame.add(pivot);
-    const flop = new Group();  // borda molenga (escala em y)
-    pivot.add(flop);
-    const bodyMat = keep(feltMaterial(tex, { sheenMix: 0.55, sheenRoughness: 0.4 }));
-    const accentMat = keep(feltMaterial(tex, { sheenMix: 0.45 }));
-    const bodyGeo = keep(lathe(cymbalBodyProfile(c.r), 40));
-    planarUV(bodyGeo, 0, 2);
-    flop.add(new Mesh(bodyGeo, bodyMat));
+    const pivot = bone(frame); // balanço
+    const flop = bone(pivot);  // borda molenga (escala em y)
+    const gold = SL[`gold_${id}`], accent = SL[`accent_${id}`];
+    const bodyPts = cymbalBodyProfile(c.r);
+    add(lathe(bodyPts, 44, gold), flop);
     // cúpula e borda na cor da peça
     const bell = [];
     for (let k = 0; k <= 8; k++) {
@@ -182,28 +177,18 @@ export function createPlushKit(tex) {
       bell.push([rho, cymbalTop(c.r, rho) + 0.0016 - (k === 0 ? 0.003 : 0)]);
     }
     bell[bell.length - 1][0] = 0;
-    flop.add(new Mesh(keep(planarUV(lathe(bell, 32), 0, 2)), accentMat));
-    const edge = new Mesh(keep(hoopGeo(c.r * 0.985, 0.0068)), accentMat);
-    edge.position.y = cymbalTop(c.r, c.r) - CYM_T / 2;
-    flop.add(edge);
+    add(lathe(bell, 32, accent), flop);
+    add(new TorusGeometry(c.r * 0.985, 0.0068, 6, 44).rotateX(Math.PI / 2).translate(0, cymbalTop(c.r, c.r) - CYM_T / 2, 0), flop, accent);
     const rs = c.r - 0.032;
-    flop.add(keep(stitchMesh(stitchGeo, threadMat, ringStitches(rs, cymbalTop(c.r, rs) + 0.0003))));
-    if (id === "hihat") {
-      const bottom = new Mesh(bodyGeo, bodyMat);
-      bottom.rotation.x = Math.PI;
-      bottom.position.y = -0.03;
-      pivot.add(bottom);
-    }
-    inst[id] = {
-      id, kind: "cymbal", piece: INSTANCE_PIECE[id], frame, pivot, flop, bodyMat, accentMat,
-      rings: createRings(frame, c.r, 0.006, keep),
-    };
+    for (const g of ringStitches(rs, cymbalTop(c.r, rs) + 0.0003)) add(g, flop, SL.thread);
+    if (id === "hihat") add(lathe(bodyPts, 44, gold).rotateX(Math.PI).translate(0, -0.03, 0), pivot);
+    inst[id] = { id, kind: "cymbal", piece: INSTANCE_PIECE[id], frame, pivot, flop };
+    rings.push({ id, frame, r: c.r, y: 0.006 });
   }
 
   // ---------- estantes de corda ----------
   {
-    const parts = [], f = new Object3D(), a = new Vector3(), b = new Vector3(), q = new Quaternion();
-    const m = new Matrix4(), s = new Vector3();
+    const f = new Object3D(), a = new Vector3(), b = new Vector3(), q = new Quaternion(), m = new Matrix4(), s = new Vector3();
     for (const rod of standRods()) {
       a.set(...rod.a); b.set(...rod.b);
       if (rod.frame) { placeFrame(rod.frame, f); a.applyMatrix4(f.matrix); b.applyMatrix4(f.matrix); }
@@ -211,108 +196,145 @@ export function createPlushKit(tex) {
       const g = ropeGeometry(r, len);
       q.setFromUnitVectors(UP, s.subVectors(b, a).normalize());
       m.compose(a.clone().add(b).multiplyScalar(0.5), q, new Vector3(1, 1, 1));
-      g.applyMatrix4(m);
-      parts.push(g);
+      add(g.applyMatrix4(m), root, SL.rope);
       if (rod.foot) {
         const knot = new SphereGeometry(r * 1.9, 10, 6);
-        scaleUV(knot, 1, 0.6);
-        knot.translate(b.x, Math.max(r * 1.9 * 0.8, b.y), b.z);
-        parts.push(knot);
+        const uv = knot.attributes.uv, puv = new Float32Array(uv.count * 2);
+        for (let i = 0; i < uv.count; i++) { puv[i * 2] = uv.getX(i); puv[i * 2 + 1] = uv.getY(i) * 0.6; }
+        knot.setAttribute("puv", new BufferAttribute(puv, 2));
+        add(knot.translate(b.x, Math.max(r * 1.9 * 0.8, b.y), b.z), root, SL.rope);
       }
     }
-    group.add(new Mesh(keep(mergeGeos(parts)), ropeMat));
   }
 
   // ---------- pedal do bumbo ----------
   const P = KICK_PEDAL;
-  const kickBoard = new Group();
+  const kickBoard = bone(group);
   kickBoard.position.set(...P.hinge);
-  group.add(kickBoard);
-  {
-    const g = keep(pillow(0.088, 0.022, P.length, 4));
-    g.translate(0, 0.011, -P.length / 2);
-    kickBoard.add(new Mesh(g, padMat));
-    const plate = new Mesh(keep(pillow(0.115, 0.014, 0.36, 4)), padMat);
-    plate.position.set(P.hinge[0], 0.007, P.hinge[2] - 0.17);
-    group.add(plate);
-  }
-  const beater = new Group();
+  add(pillow(0.088, 0.022, P.length, 4).translate(0, 0.011, -P.length / 2), kickBoard, SL.pad);
+  add(pillow(0.115, 0.014, 0.36, 4).translate(P.hinge[0], 0.007, P.hinge[2] - 0.17), root, SL.pad);
+  const beater = bone(group);
   beater.position.set(...P.beaterPivot);
-  group.add(beater);
-  {
-    const g = keep(ropeGeometry(0.0065, P.beaterLen));
-    g.translate(0, P.beaterLen / 2, 0);
-    beater.add(new Mesh(g, ropeMat));
-  }
-  const felt = new Mesh(keep(ellipsoid(P.feltR, P.feltR, P.feltR, { w: 20, h: 14 })), ballMat);
-  felt.position.y = P.beaterLen;
-  beater.add(felt);
+  add(ropeGeometry(0.0065, P.beaterLen).translate(0, P.beaterLen / 2, 0), beater, SL.rope);
+  add(ellipsoid(P.feltR, P.feltR, P.feltR, 20, 14).translate(0, P.beaterLen, 0), beater, SL.ball);
 
   // ---------- pedal do chimbal ----------
   {
     const H = HIHAT_PEDAL;
-    const g = keep(pillow(0.084, 0.022, H.length, 4));
-    g.translate(0, 0.011, -H.length / 2);
-    const board = new Mesh(g, padMat);
-    board.position.set(...H.hinge);
-    board.rotation.x = H.angle;
-    group.add(board);
+    const g = pillow(0.084, 0.022, H.length, 4).translate(0, 0.011, -H.length / 2);
+    g.applyMatrix4(new Matrix4().makeRotationX(H.angle).setPosition(...H.hinge));
+    add(g, root, SL.pad);
   }
 
-  // ---------- banco: almofada redonda com botão e costura ----------
+  // ---------- banco: almofada redonda com costura ----------
   {
-    const top = THRONE.pos[1], r = THRONE.r + 0.025, y0 = top - 0.1;
-    const cushion = new Mesh(keep(lathe(cushionProfile(r, y0, top, 3.2, 18), 40)), seatMat);
-    cushion.position.set(THRONE.pos[0], 0, THRONE.pos[2]);
-    group.add(cushion);
-    const mid = (y0 + top) / 2;
-    cushion.add(keep(stitchMesh(stitchGeo, threadMat, stitchLine((s, Pt, N) => {
+    const top = THRONE.pos[1], r = THRONE.r + 0.025, y0 = top - 0.1, mid = (y0 + top) / 2;
+    add(lathe(cushionProfile(r, y0, top, 3.2, 18), 40, SL.seat).translate(THRONE.pos[0], 0, THRONE.pos[2]), root);
+    for (const g of stitchGeometry(stitchLine((s, Pt, N) => {
       const a = s * Math.PI * 2;
       N.set(Math.cos(a), 0, Math.sin(a));
       return Pt.set(r * Math.cos(a), mid, r * Math.sin(a)).addScaledVector(N, 0.0005);
-    }, 2 * Math.PI * r, [], { closed: true }))));
+    }, 2 * Math.PI * r, [], { closed: true }))) add(g.translate(THRONE.pos[0], 0, THRONE.pos[2]), root, SL.thread);
   }
 
-  // ---------- sombras borradas no chão ----------
-  const shadowGeo = keep(new PlaneGeometry(1, 1));
-  shadowGeo.rotateX(-Math.PI / 2);
-  const shadowSoft = keep(new MeshBasicMaterial({ map: tex.radial, transparent: true, depthWrite: false, toneMapped: false }));
-  const shadowHard = keep(new MeshBasicMaterial({ map: tex.radial, transparent: true, depthWrite: false, toneMapped: false }));
-  function shadows(mat, list, y) {
-    const m = new InstancedMesh(shadowGeo, mat, list.length), M = new Matrix4();
-    list.forEach(([x, z, sx, sz], i) => m.setMatrixAt(i, M.makeScale(sx, 1, sz).setPosition(x, y + i * 0.0001, z)));
-    m.computeBoundingSphere();
-    m.renderOrder = -1;
-    group.add(m);
-    return keep(m);
-  }
-  const cymFoot = (id) => { const f = placeFrame(id, new Object3D()); return [f.position.x, f.position.z]; };
-  shadows(shadowSoft, [[0.08, -0.22, 2.7, 2.3], [0.02, 0.2, 1.2, 1.1]], 0.001);
-  shadows(shadowHard, [
-    [THRONE.pos[0], THRONE.pos[2] + 0.02, 0.78, 0.74],
-    [KICK.pos[0], KICK.pos[2] - KICK.depth / 2, 0.82, 0.62],
-    [DRUMS.floor.pos[0], DRUMS.floor.pos[2], 0.6, 0.6],
-    [DRUMS.snare.pos[0], DRUMS.snare.pos[2], 0.5, 0.5],
-    [...cymFoot("hihat"), 0.5, 0.5], [...cymFoot("crash"), 0.55, 0.55], [...cymFoot("ride"), 0.58, 0.58],
-    [P.hinge[0], P.hinge[2] - 0.14, 0.28, 0.5], [HIHAT_PEDAL.hinge[0], HIHAT_PEDAL.hinge[2] - 0.12, 0.26, 0.45],
-  ], 0.0016);
-
+  // ---------- tudo numa SkinnedMesh ----------
   group.updateMatrixWorld(true);
+  for (const p of parts) p.geo.applyMatrix4(p.owner.matrixWorld); // pose de repouso, no mundo
+  const geo = mergeSkinned(parts);
+  const mat = plushMaterial("palette", { slots: SLOTS, rope: SL.rope, sheen: 0.8, sheenMix: 0.45 });
+  const skeleton = new Skeleton(bones, bones.map((b) => b.matrixWorld.clone().invert()));
+  const mesh = new SkinnedMesh(geo, mat);
+  mesh.name = "kit-pelucia-feltro";
+  mesh.frustumCulled = false;
+  mesh.bind(skeleton, new Matrix4());
+  group.add(mesh);
+
+  // ---------- sombras borradas no chão (uma malha) ----------
+  const cymFoot = (id) => { const f = placeFrame(id, new Object3D()); return [f.position.x, f.position.z]; };
+  const blobs = [
+    [0.08, -0.22, 2.7, 2.3, 0], [0.02, 0.2, 1.2, 1.1, 0],
+    [THRONE.pos[0], THRONE.pos[2] + 0.02, 0.78, 0.74, 1],
+    [KICK.pos[0], KICK.pos[2] - KICK.depth / 2, 0.82, 0.62, 1],
+    [DRUMS.floor.pos[0], DRUMS.floor.pos[2], 0.6, 0.6, 1],
+    [DRUMS.snare.pos[0], DRUMS.snare.pos[2], 0.5, 0.5, 1],
+    [...cymFoot("hihat"), 0.5, 0.5, 1], [...cymFoot("crash"), 0.55, 0.55, 1], [...cymFoot("ride"), 0.58, 0.58, 1],
+    [P.hinge[0], P.hinge[2] - 0.14, 0.28, 0.5, 1], [HIHAT_PEDAL.hinge[0], HIHAT_PEDAL.hinge[2] - 0.12, 0.26, 0.45, 1],
+  ];
+  const shadowGeo = new BufferGeometry();
+  {
+    const pos = [], uv = [], kind = [], idx = [];
+    blobs.forEach(([x, z, sx, sz, k], i) => {
+      const y = k ? 0.0016 + i * 0.0001 : 0.001 + i * 0.0001;
+      for (const [u, v] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+        pos.push(x + (u * sx) / 2, y, z + (v * sz) / 2);
+        uv.push(u, v);
+        kind.push(k);
+      }
+      const o = i * 4;
+      idx.push(o, o + 2, o + 1, o, o + 3, o + 2);
+    });
+    shadowGeo.setAttribute("position", new BufferAttribute(new Float32Array(pos), 3));
+    shadowGeo.setAttribute("uv", new BufferAttribute(new Float32Array(uv), 2));
+    shadowGeo.setAttribute("kind", new BufferAttribute(new Float32Array(kind), 1));
+    shadowGeo.setIndex(idx);
+  }
+  const shadowU = { uSoft: { value: 0.2 }, uHard: { value: 0.34 } };
+  const shadowMat = new MeshBasicMaterial({ transparent: true, depthWrite: false, toneMapped: false });
+  shadowMat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, shadowU);
+    sh.vertexShader = sh.vertexShader
+      .replace("#include <common>", "#include <common>\nattribute float kind;\nvarying vec3 vSh;")
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvSh = vec3(uv, kind);");
+    // mancha radial: mesmo perfil da sombra borrada de antes (e^(-3,9 r²))
+    sh.fragmentShader = sh.fragmentShader
+      .replace("#include <common>", "#include <common>\nvarying vec3 vSh;\nuniform float uSoft;\nuniform float uHard;")
+      .replace("vec4 diffuseColor = vec4( diffuse, opacity );",
+        "float rr = dot(vSh.xy, vSh.xy);\nvec4 diffuseColor = vec4( diffuse, mix(uSoft, uHard, vSh.z) * exp(-3.93 * rr) * (1.0 - smoothstep(0.72, 1.0, rr)) );");
+  };
+  shadowMat.customProgramCacheKey = () => "plush-shadow";
+  const shadows = new Mesh(shadowGeo, shadowMat);
+  shadows.name = "kit-pelucia-sombras";
+  shadows.renderOrder = -1;
+  group.add(shadows);
+
+  // ---------- anéis de antecipação (uma InstancedMesh) ----------
+  const ringGeo = new RingGeometry(0.93, 1, 48, 1);
+  ringGeo.rotateX(-Math.PI / 2);
+  const ringMax = rings.length * RINGS_PER_PIECE;
+  const ringMat = new MeshBasicMaterial({ transparent: true, depthWrite: false, side: DoubleSide });
+  const ringAlpha = new InstancedBufferAttribute(new Float32Array(ringMax), 1);
+  ringGeo.setAttribute("ringAlpha", ringAlpha);
+  ringMat.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader
+      .replace("#include <common>", "#include <common>\nattribute float ringAlpha;\nvarying float vRingAlpha;")
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvRingAlpha = ringAlpha;");
+    sh.fragmentShader = sh.fragmentShader
+      .replace("#include <common>", "#include <common>\nvarying float vRingAlpha;")
+      .replace("vec4 diffuseColor = vec4( diffuse, opacity );", "vec4 diffuseColor = vec4( diffuse, opacity * vRingAlpha );");
+  };
+  ringMat.customProgramCacheKey = () => "plush-rings";
+  const ringMesh = new InstancedMesh(ringGeo, ringMat, ringMax);
+  ringMesh.name = "kit-pelucia-aneis";
+  ringMesh.count = 0;
+  ringMesh.renderOrder = 2;
+  ringMesh.frustumCulled = false;
+  ringMesh.setColorAt(0, new Color(1, 1, 1));
+  group.add(ringMesh);
+  for (const rg of rings) { rg.frame.updateMatrixWorld(true); rg.matrix = rg.frame.matrixWorld.clone(); }
 
   // ---------- cores ----------
   const colors = { piece: {}, accent: {}, head: new Color(), bg: new Color(), gold: new Color() };
-  const tmpC = new Color();
+  const tmpC = new Color(), black = new Color(0, 0, 0);
   let muted = new Set();
   function paint(theme) {
-    setFelt(ropeMat, theme.rope);
-    setFelt(padMat, theme.pad);
-    setFelt(seatMat, theme.seat);
-    setFelt(ballMat, theme.head);
-    threadMat.color.set(theme.thread);
-    shadowSoft.color.set(theme.shadow);
-    shadowHard.color.set(theme.shadow);
-    shadowSoft.opacity = theme.shadowSoft;
-    shadowHard.opacity = theme.shadowHard;
+    setSlot(mat, SL.rope, theme.rope);
+    setSlot(mat, SL.pad, theme.pad);
+    setSlot(mat, SL.seat, theme.seat);
+    setSlot(mat, SL.ball, theme.head);
+    setSlot(mat, SL.thread, theme.thread, 0.85);
+    shadowMat.color.set(theme.shadow);
+    shadowU.uSoft.value = theme.shadowSoft;
+    shadowU.uHard.value = theme.shadowHard;
     colors.head.set(theme.head);
     colors.bg.set(theme.bg);
     colors.gold.set(theme.gold);
@@ -325,41 +347,61 @@ export function createPlushKit(tex) {
       const c = colors.piece[it.piece];
       if (!c) continue;
       const m = muted.has(it.piece);
-      for (const r of it.rings) r.material.color.copy(c);
       if (it.kind === "cymbal") {
-        setFelt(it.bodyMat, tmpC.copy(colors.gold).lerp(colors.bg, m ? 0.6 : 0));
-        setFelt(it.accentMat, tmpC.copy(colors.accent[it.piece]).lerp(colors.bg, m ? 0.78 : 0));
+        setSlot(mat, SL[`gold_${it.id}`], tmpC.copy(colors.gold).lerp(colors.bg, m ? 0.6 : 0), 0.86);
+        setSlot(mat, SL[`accent_${it.id}`], tmpC.copy(colors.accent[it.piece]).lerp(colors.bg, m ? 0.78 : 0));
       } else {
-        setFelt(it.shellMat, tmpC.copy(c).lerp(colors.bg, m ? 0.78 : 0));
-        setFelt(it.hoopMat, tmpC.copy(c).multiplyScalar(0.8).lerp(colors.bg, m ? 0.78 : 0));
-        setFelt(it.headMat, tmpC.copy(colors.head).lerp(colors.bg, m ? 0.7 : 0));
+        setSlot(mat, SL[`shell_${it.id}`], tmpC.copy(c).lerp(colors.bg, m ? 0.78 : 0));
+        setSlot(mat, SL[`hoop_${it.id}`], tmpC.copy(c).multiplyScalar(0.8).lerp(colors.bg, m ? 0.78 : 0));
+        setSlot(mat, SL[`head_${it.id}`], tmpC.copy(colors.head).lerp(colors.bg, m ? 0.7 : 0));
       }
     }
   }
 
   // ---------- animação ----------
+  const ringM = new Matrix4(), ringS = new Matrix4();
   function update(t, prep, anticipation) {
+    let shown = 0;
     for (const it of Object.values(inst)) {
       const hits = prep.instHits[it.id] || [];
       const c = colors.piece[it.piece];
       const isMuted = muted.has(it.piece);
       const f = isMuted ? 0 : flash(hits, t);
       if (it.kind === "cymbal") {
-        it.bodyMat.emissive.copy(c).multiplyScalar(0.22 * f);
-        it.accentMat.emissive.copy(c).multiplyScalar(0.3 * f);
+        setSlotEmissive(mat, SL[`gold_${it.id}`], c || black, 0.22 * f);
+        setSlotEmissive(mat, SL[`accent_${it.id}`], c || black, 0.3 * f);
         const [amp, tau, freq] = FLOP[it.id];
         it.pivot.rotation.x = softWobble(hits, t, amp, tau, freq, 0.14);
         it.flop.scale.y = 1 + softWobble(hits, t, 0.45, tau * 0.6, freq * 2.2, 0.1);
       } else {
-        if (!isMuted) it.headMat.color.copy(colors.head).lerp(c, 0.35 * f);
-        it.headMat.emissive.copy(c).multiplyScalar(0.2 * f);
+        if (!isMuted && c) setSlot(mat, SL[`head_${it.id}`], tmpC.copy(colors.head).lerp(c, 0.35 * f));
+        setSlotEmissive(mat, SL[`head_${it.id}`], c || black, 0.2 * f);
         // pele afunda e casco amassa (squash and stretch), parado de novo no próximo golpe
         const q = softWobble(hits, t, 1, SQUASH.tau, SQUASH.freq, 0.1);
         const k = (SQUASH.dip / it.depth) * q;
         it.squash.scale.set(1 + 0.6 * k, 1 - k, 1 + 0.6 * k);
         it.head.position.y = -0.003 * Math.max(0, q);
       }
-      updateRings(it.rings, hits, t, prep.clock, anticipation && !isMuted);
+      // anéis: os próximos golpes até 1 tempo à frente
+      if (anticipation && !isMuted && c) {
+        const len = prep.clock.beatLen(t), rg = rings.find((x) => x.id === it.id);
+        for (let j = upperBound(hits, t), n = 0; j < hits.length && n < RINGS_PER_PIECE; j++, n++) {
+          const dt = hits[j].t - t;
+          if (dt > len) break;
+          const u = dt / len, sc = rg.r * (1 + 1.4 * u);
+          ringM.copy(rg.matrix).multiply(ringS.makeTranslation(0, rg.y, 0)).multiply(ringS.makeScale(sc, sc, sc));
+          ringMesh.setMatrixAt(shown, ringM);
+          ringMesh.setColorAt(shown, c);
+          ringAlpha.array[shown] = 0.9 * (1 - u) + 0.08;
+          shown++;
+        }
+      }
+    }
+    ringMesh.count = shown;
+    if (shown) {
+      ringMesh.instanceMatrix.needsUpdate = true;
+      ringMesh.instanceColor.needsUpdate = true;
+      ringAlpha.needsUpdate = true;
     }
     const p = footPress(prep.limbs.PD, t);
     kickBoard.rotation.x = pedalAngle(p);
@@ -372,7 +414,7 @@ export function createPlushKit(tex) {
   /** Debug: distância (m) da frente do batedor até a pele do bumbo. */
   function beaterGap() {
     beater.updateMatrixWorld(true);
-    const w = felt.getWorldPosition(new Vector3());
+    const w = new Vector3(0, P.beaterLen, 0).applyMatrix4(beater.matrixWorld);
     return w.z - P.feltR - KICK.pos[2];
   }
   /** Debug: quanto a superfície da peça está fora do lugar agora (m ou rad). */
@@ -384,12 +426,10 @@ export function createPlushKit(tex) {
 
   return {
     group, inst, update, paint, setMuted, beaterGap, deform,
-    dispose() { for (const d of disposables) d.dispose(); },
+    dispose() {
+      geo.dispose(); mat.dispose(); skeleton.dispose();
+      shadowGeo.dispose(); shadowMat.dispose();
+      ringGeo.dispose(); ringMat.dispose(); ringMesh.dispose();
+    },
   };
-}
-
-// Cilindro aberto com UV de corda: uma volta da textura em u, hélice a ~50°.
-function ropeGeometry(r, len) {
-  const g = new CylinderGeometry(r, r, len, 8, Math.max(1, Math.round(len / 0.09)), true);
-  return scaleUV(g, 1, len / (0.56 * 2 * Math.PI * r));
 }

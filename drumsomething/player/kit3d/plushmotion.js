@@ -1,6 +1,8 @@
 // Movimentos extras do estilo pelúcia, todos como função pura do tempo (igual
-// a motion.js): rabo no andamento, cabeça no pulso, piscada, orelhas no prato
-// de ataque e o amasso das peças no golpe.
+// a motion.js): o amasso das peças no golpe e a ação secundária do gato
+// (cabeça e tronco seguindo o golpe, rabo ondulando, orelhas, barriga,
+// piscada). Nada guarda estado entre quadros: cada valor é uma soma de
+// respostas amortecidas aos golpes recentes, então seek e loop funcionam.
 
 import { lastAtOrBefore } from "./timeline.js";
 
@@ -26,11 +28,33 @@ export function softWobble(hits, t, amp, tau, freq, fade = 0.12) {
   return v;
 }
 
-/** Ângulo do rabo (rad, -1..1 vezes a amplitude) num ponto s (0 = base, 1 = ponta). */
-export function tailSway(clock, t, s) {
-  const beat = clock.beatAt(t);
-  // um vaivém a cada 2 tempos, com a ponta atrasada (onda descendo pelo rabo)
-  return Math.sin(Math.PI * beat - 1.5 * s) * (0.35 + 0.65 * s);
+/**
+ * Soma de impulsos amortecidos dos golpes recentes: cada golpe dá um empurrão
+ * que sobe até 1 em `tau` segundos e some devagar (s/τ·e^(1-s/τ)), começando
+ * `delay` segundos depois da nota. Contínuo no tempo.
+ */
+export function impulse(hits, t, tau, delay = 0) {
+  if (!hits || !hits.length) return 0;
+  let sum = 0;
+  for (let i = lastAtOrBefore(hits, t - delay), k = 0; i >= 0 && k < 10; i--, k++) {
+    const s = t - delay - hits[i].t;
+    if (s > tau * 8) break;
+    const u = s / tau;
+    sum += (hits[i].ghost ? 0.25 : hits[i].vel) * u * Math.exp(1 - u);
+  }
+  return sum;
+}
+
+/** Soma de balanços amortecidos (e^(-s/τ)·sen(2πfs)) dos golpes recentes. Começa em 0 em cada golpe. */
+export function ripple(hits, t, tau, freq, delay = 0) {
+  if (!hits || !hits.length) return 0;
+  let sum = 0;
+  for (let i = lastAtOrBefore(hits, t - delay), k = 0; i >= 0 && k < 10; i--, k++) {
+    const s = t - delay - hits[i].t;
+    if (s > tau * 6) break;
+    sum += (hits[i].ghost ? 0.25 : hits[i].vel) * Math.exp(-s / tau) * Math.sin(2 * Math.PI * freq * s);
+  }
+  return sum;
 }
 
 /** Aceno da cabeça no pulso: 1 na batida, 0 no meio do tempo. */
@@ -65,3 +89,42 @@ export function blink(t) {
 
 /** Orelhas mexendo depois de um golpe no prato de ataque (-1..1). */
 export const earTwitch = (crashHits, t) => softWobble(crashHits, t, 1, 0.13, 5.5, 0.1);
+
+export const TAIL_BONES = 6;
+
+/**
+ * Ação secundária do gato no tempo t (ângulos em rad, distâncias em m).
+ * A cabeça e o tronco seguem cada golpe com um pequeno atraso, as orelhas
+ * balançam com a cabeça (e mais no prato de ataque), a barriga sacode no
+ * bumbo e o rabo ondula em corrente: vaivém no andamento + ondas que descem
+ * pelo rabo depois de cada bumbo.
+ */
+export function catMotion(prep, t, out = { tail: new Float64Array(TAIL_BONES * 2) }) {
+  const { limbs, clock, instHits } = prep;
+  const md = limbs.MD, me = limbs.ME, kick = limbs.PD;
+  const beat = clock.beatAt(t);
+  // golpes das mãos: a cabeça e o tronco vão junto um pouquinho depois
+  const iMD = impulse(md, t, 0.1, 0.02), iME = impulse(me, t, 0.1, 0.02);
+  const iKick = impulse(kick, t, 0.09, 0.015);
+  const hands = Math.min(1.6, iMD + iME);
+  out.chestPitch = -0.012 * hands - 0.01 * iKick;
+  out.chestRoll = 0.012 * (iME - iMD);
+  out.headPitch = -0.045 * headPulse(clock, t) - 0.035 * impulse(md, t, 0.13, 0.06) - 0.035 * impulse(me, t, 0.13, 0.06);
+  out.headRoll = 0.035 * Math.sin(Math.PI * beat) + 0.03 * (impulse(me, t, 0.14, 0.05) - impulse(md, t, 0.14, 0.05));
+  out.headYaw = 0.025 * Math.sin(Math.PI * beat * 0.5 + 0.7);
+  // orelhas: inércia do balanço da cabeça + susto no prato de ataque
+  const tw = earTwitch(instHits.crash || [], t);
+  const flop = 0.5 * (ripple(md, t, 0.11, 4.2, 0.07) + ripple(me, t, 0.11, 4.2, 0.07)) + 0.6 * ripple(kick, t, 0.12, 3.6, 0.04);
+  out.earPitch = 0.32 * tw + 0.07 * flop;
+  out.earRoll = 0.22 * Math.abs(tw) + 0.05 * flop;
+  // barriga: sacode no bumbo
+  out.belly = 0.0045 * ripple(kick, t, 0.12, 4.5, 0.01) + 0.0015 * hands;
+  // rabo: [yaw, pitch] por osso
+  for (let i = 0; i < TAIL_BONES; i++) {
+    const s = i / (TAIL_BONES - 1);
+    out.tail[i * 2] = (0.07 + 0.06 * s) * Math.sin(Math.PI * beat - 0.9 * i);
+    out.tail[i * 2 + 1] = 0.09 * ripple(kick, t, 0.16, 2.6, 0.045 * i) + 0.02 * Math.sin(Math.PI * beat * 0.5 - 0.6 * i);
+  }
+  out.blink = blink(t);
+  return out;
+}
