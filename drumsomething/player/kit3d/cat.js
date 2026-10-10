@@ -15,7 +15,7 @@ import {
 import { BODY } from "./layout.js";
 import { FEET, HANDS } from "./rig.js";
 import { B, EARS, EYE_C, createCatBones } from "./catrig.js";
-import { catBody, projectToBody } from "./catbody.js";
+import { catBody, projectToBody, rayToBody } from "./catbody.js";
 import { CAT_PALETTES, plushMaterial, setSlot, setSlotEmissive } from "./felt.js";
 import { basis, ellipsoid as shapeEllipsoid, mergeSkinned, thread as shapeThread } from "./shapes.js";
 
@@ -53,27 +53,30 @@ function buildDetails(body) {
   const H = (x, y, z) => v3(x, y, z).applyMatrix4(head);
   const N = new Vector3();
   const onBody = (p, n = N) => projectToBody(body, p.clone(), n);
+  // ponto do rosto: raio saindo de dentro da cabeça na direção de (x, y, z) local
+  const headC = H(0, 0.1, -0.02);
+  const onFace = (x, y, z, n = N) => rayToBody(body, headC, H(x, y, z).sub(headC), n);
   const headN = new Matrix4().extractRotation(head);
   const fwd = v3(0, 0, -1).applyMatrix4(headN), headUp = v3(0, 1, 0).applyMatrix4(headN);
   const bodyStitches = [], headStitches = [];
 
   // ---------- olhos de botão (osso dos olhos, que pisca) ----------
   for (const s of [1, -1]) {
-    const P = onBody(H(0.047 * s, EYE_C.y, -0.2));
+    const P = onFace(0.052 * s, EYE_C.y, -0.2);
     const n = N.clone();
-    const m = basis(P.clone().addScaledVector(n, 0.003), n, headUp);
-    const btn = ellipsoid(0.0235, 0.0235, 0.0095, 20, 14).applyMatrix4(m);
+    const m = basis(P.clone().addScaledVector(n, 0.0042), n, headUp);
+    const btn = ellipsoid(0.02, 0.02, 0.0085, 20, 14).applyMatrix4(m);
     parts.push({ geo: btn, slot: S.eye, bone: B.olhos });
-    const rim = new TorusGeometry(0.0205, 0.0029, 6, 24).applyMatrix4(m.clone().multiply(new Matrix4().makeTranslation(0, 0, -0.0046)));
+    const rim = new TorusGeometry(0.0175, 0.0026, 6, 24).applyMatrix4(m.clone().multiply(new Matrix4().makeTranslation(0, 0, -0.004)));
     parts.push({ geo: rim, slot: S.rim, bone: B.olhos });
-    const g1 = ellipsoid(0.006, 0.006, 0.003, 10, 8).translate(-0.0078 * s, 0.0084, -0.0088).applyMatrix4(m);
-    const g2 = ellipsoid(0.0025, 0.0025, 0.0017, 8, 6).translate(0.0084 * s, -0.007, -0.0085).applyMatrix4(m);
+    const g1 = ellipsoid(0.0052, 0.0052, 0.0027, 10, 8).translate(-0.0067 * s, 0.0072, -0.0078).applyMatrix4(m);
+    const g2 = ellipsoid(0.0022, 0.0022, 0.0015, 8, 6).translate(0.0072 * s, -0.006, -0.0075).applyMatrix4(m);
     parts.push({ geo: g1, slot: S.glint, bone: B.olhos }, { geo: g2, slot: S.glint, bone: B.olhos });
   }
 
   // ---------- nariz, boca e bigodes (cabeça) ----------
-  const puff = (s) => H(0.03 * s, 0.067, -0.119); // centro das almofadas do focinho
-  const noseP = onBody(H(0, 0.093, -0.2));
+  const puff = (s) => H(0.031 * s, 0.064, -0.12); // centro das almofadas do focinho
+  const noseP = onFace(0, 0.093, -0.2);
   const noseN = N.clone();
   {
     const g = new SphereGeometry(1, 18, 12);
@@ -89,7 +92,7 @@ function buildDetails(body) {
   {
     const lift = (q) => { const n = new Vector3(); const r = onBody(q, n); return r.addScaledVector(n, 0.0007); };
     const top = lift(noseP.clone().addScaledVector(headUp, -0.011));
-    const valley = lift(H(0, 0.056, -0.2));
+    const valley = (() => { const n = new Vector3(); return onFace(0, 0.052, -0.2, n).addScaledVector(n, 0.0007); })();
     parts.push({ geo: thread([top, top.clone().lerp(valley, 0.5), valley], 0.0012), slot: S.thread, bone: B.cabeca });
     for (const s of [1, -1]) {
       const c = puff(s), pts = [valley];
@@ -163,12 +166,13 @@ function buildDetails(body) {
     const pr = new Matrix4().extractRotation(paw);
     const py = v3(0, 1, 0).applyMatrix4(pr);
     const c = v3(0, 0.024, 0).applyMatrix4(paw); // centro da pata
-    const front = py.clone().multiplyScalar(0.55).add(v3(0, -0.55, -0.62)).normalize();
+    const front = py.clone().multiplyScalar(0.35).add(v3(0, -0.45, -0.82)).normalize();
     const side = new Vector3().crossVectors(front, py).normalize();
     const up2 = new Vector3().crossVectors(side, front).normalize();
     const bean = (d, rx, ry, rz) => {
       const n = new Vector3();
-      const p = onBody(c.clone().addScaledVector(d, 0.1), n);
+      // começa logo fora da pata, pra cair na pata e não no braço
+      const p = onBody(c.clone().addScaledVector(d, 0.066), n);
       const g = ellipsoid(rx, ry, rz, 12, 8).applyMatrix4(basis(p.addScaledVector(n, rz * 0.3), n, py));
       parts.push({ geo: g, slot: S.bean, bone });
     };
@@ -222,16 +226,26 @@ function buildDetails(body) {
   // ---------- costura em volta do peito creme ----------
   {
     const torso = bind[B.pelve], pts = [];
+    const fwdT = v3(0, 0, -1).applyMatrix4(new Matrix4().extractRotation(torso));
     for (let k = 0; k <= 72; k++) {
       const a = (k / 72) * Math.PI * 2;
       const q = v3(0.118 * 0.93 * Math.cos(a), 0.255 + 0.29 * 0.93 * Math.sin(a), -0.3).applyMatrix4(torso);
       const n = new Vector3();
-      // vem da frente até a superfície
-      const p = onBody(q, n);
-      pts.push([p, n.clone()]);
+      // projeta só no tronco; ponto escondido embaixo de braço ou perna fica de fora
+      // raio de dentro do tronco pra frente, na mesma altura e largura
+      const pc = rayToBody(body, q.clone().addScaledVector(fwdT, -0.3), fwdT, n, body.coreDistance);
+      // depois sobe até a superfície de verdade (o estofado das emendas fica
+      // por cima do tronco); se ela estiver longe, é braço ou perna na frente
+      const p = projectToBody(body, pc.clone(), n);
+      pts.push(p.distanceTo(pc) < 0.006 ? [p, n.clone()] : null);
     }
-    // só o trecho da frente (atrás do pescoço e entre as pernas some)
-    bodyStitches.push(pts);
+    // quebra a linha nos trechos escondidos
+    let run = [];
+    for (const x of pts) {
+      if (x) run.push(x);
+      else { if (run.length > 1) bodyStitches.push(run); run = []; }
+    }
+    if (run.length > 1) bodyStitches.push(run);
   }
 
   // pontinhos de costura (grãos alongados) ao longo das linhas

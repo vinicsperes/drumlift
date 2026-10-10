@@ -171,7 +171,7 @@ export function plushMaterial(kind, { slots = 1, rope = -1, sheen = 0.85, sheenM
       .replace("#include <begin_vertex>", `#include <begin_vertex>\n${vBody.join("\n")}${dq ? DQ_POINT : ""}`);
     let color = fur
       ? `{
-    float sw = fwidth(vFur.x) * 0.8 + 0.02, cw = fwidth(vFur.y) * 0.8 + 0.02;
+    float sw = fwidth(vFur.x) * 0.8 + 0.05, cw = fwidth(vFur.y) * 0.8 + 0.035;
     float s = smoothstep(0.62 - sw, 0.62 + sw, vFur.x);
     float c = smoothstep(0.5 - cw, 0.5 + cw, vFur.y);
     diffuseColor.rgb = mix(mix(uFur, uStripe, s), uCream, c) * plushMottle;

@@ -38,7 +38,9 @@ function buildShapes(bind, joints) {
   const shapes = [];
   const torso = bind[B.pelve], head = bind[B.cabeca];
   const torsoInv = torso.clone().invert(), headInv = head.clone().invert();
-  const add = (name, prim, bone, fur) => { shapes.push({ name, prim, bone, fur }); return shapes.length - 1; };
+  // `group` = família de listras: dentro dela os desenhos casam, entre famílias as listras somem na emenda
+  let group = "tronco";
+  const add = (name, prim, bone, fur) => { shapes.push({ name, prim, bone, fur, group }); return shapes.length - 1; };
   const ell = (frameM, c, r) => {
     const m = frameM.clone().multiply(new Matrix4().makeTranslation(c.x, c.y, c.z));
     return ellipsoid(toLocal(m), [r.x, r.y, r.z], apply(m, v3(0, 0, 0)).toArray());
@@ -50,10 +52,10 @@ function buildShapes(bind, joints) {
     const q = tq.copy(p).applyMatrix4(torsoInv);
     const th = Math.atan2(q.x, -q.z); // 0 = frente
     const ex = q.x / 0.118, ey = (q.y - 0.255) / 0.29;
-    const cream = smooth(-0.03, -0.1, q.z) * (1 - smooth(0.8, 1.05, Math.hypot(ex, ey)));
+    const cream = smooth(0.0, -0.06, q.z) * (1 - smooth(0.8, 1.05, Math.hypot(ex, ey)));
     const phase = q.y / 0.074 + 0.2 * Math.sin(3 * th + 0.4) + 0.07 * Math.sin(7 * th + 1.3);
-    const amt = smooth(0.5, 1.5, Math.abs(th)) * (0.75 + 0.25 * smooth(2.0, 2.8, Math.abs(th)));
-    return [amt * band(phase) * (1 - cream), cream];
+    const amt = smooth(0.8, 1.7, Math.abs(th)) * (0.75 + 0.25 * smooth(2.0, 2.8, Math.abs(th)));
+    return [amt * band(phase) * (1 - cream) * (1 - cream), cream];
   }
   function headFur(p) {
     const h = hq.copy(p).applyMatrix4(headInv);
@@ -61,13 +63,13 @@ function buildShapes(bind, joints) {
     const top = smooth(0.135, 0.19, h.y) * (1 - smooth(0.03, 0.09, h.z));
     const lines = band(h.x / 0.034) * (1 - smooth(0.05, 0.09, Math.abs(h.x)));
     // nuca: anéis
-    const back = smooth(0.0, 0.07, h.z) * band((h.y - 0.02) / 0.052);
+    const back = smooth(0.0, 0.07, h.z) * smooth(0.03, 0.08, h.y) * band((h.y - 0.02) / 0.052);
     // bochechas: duas faixas de cada lado
     const cheek = smooth(0.088, 0.125, Math.abs(h.x)) * (1 - smooth(-0.02, 0.04, h.z)) *
       smooth(0.035, 0.06, h.y) * (1 - smooth(0.115, 0.14, h.y)) * band((h.y - 0.064) / 0.034);
     const s = Math.max(top * lines, back * 0.9, cheek);
     // queixo e garganta creme
-    const cream = smooth(0.05, 0.02, h.y) * (1 - smooth(-0.02, 0.05, h.z));
+    const cream = smooth(0.05, 0.02, h.y) * (1 - smooth(-0.08, -0.03, h.z));
     return [s * (1 - cream), cream];
   }
   /** Anéis em volta de um membro: fase pelo comprimento desde a raiz. */
@@ -90,8 +92,9 @@ function buildShapes(bind, joints) {
   const YOKE = add("ombros", roundCone(yokeA.toArray(), yokeB.toArray(), 0.07, 0.07), B.peito, torsoFur);
 
   // ---------- cabeça ----------
+  group = "cabeca";
   const SKULL_I = add("cabeca", ell(head, SKULL.c, SKULL.r), B.cabeca, headFur);
-  const CHEEKS = [-1, 1].map((s) => add("bochecha", ell(head, v3(0.06 * s, 0.074, -0.046), v3(0.083, 0.067, 0.075)), B.cabeca, headFur));
+  const CHEEKS = [-1, 1].map((s) => add("bochecha", ell(head, v3(0.06 * s, 0.06, -0.05), v3(0.08, 0.058, 0.07)), B.cabeca, headFur));
   const core = [HIPS, BELLY, WAIST, CHEST, YOKE, SKULL_I, ...CHEEKS];
 
   // ---------- membros ----------
@@ -100,13 +103,14 @@ function buildShapes(bind, joints) {
     const j = joints.arms[l], S = j.shoulder, E = j.elbow, W = j.wrist;
     const M = S.clone().lerp(E, 0.45), lu = S.distanceTo(E);
     const paw = bind[B[`pata${l}`]];
+    group = `braco${l}`;
     branches.push({
       name: `braco${l}`, k: 0.05, tau: 0.03, tauChain: 0.022,
       prims: [
         add("ombro", roundCone(S.toArray(), M.toArray(), 0.06, 0.054), B[`ombro${l}`], ringFur(S, E, 0.02, 0.066)),
         add("braco", roundCone(M.toArray(), E.toArray(), 0.054, 0.047), B[`braco${l}`], ringFur(S, E, 0.02, 0.066)),
         add("antebraco", roundCone(E.toArray(), W.toArray(), 0.047, 0.04), B[`antebraco${l}`], ringFur(E, W, 0.02 + lu, 0.066)),
-        add("pata", ell(paw, v3(0, 0.024, 0), v3(0.05, 0.06, 0.047)), B[`pata${l}`], cream),
+        (group = `pata${l}`, add("pata", ell(paw, v3(0, 0.024, 0), v3(0.05, 0.06, 0.047)), B[`pata${l}`], cream)),
       ],
       ks: [0, 0.02, 0.03, 0.026],
     });
@@ -114,17 +118,19 @@ function buildShapes(bind, joints) {
   for (const l of FEET) {
     const j = joints.legs[l], H = j.hip, K = j.knee, A = j.ankle, lt = H.distanceTo(K);
     const foot = bind[B[`pe${l}`]];
+    group = `perna${l}`;
     branches.push({
       name: `perna${l}`, k: 0.06, tau: 0.035, tauChain: 0.025,
       prims: [
         add("coxa", roundCone(H.toArray(), K.toArray(), 0.083, 0.064), B[`coxa${l}`], ringFur(H, K, 0, 0.075)),
         add("canela", roundCone(K.toArray(), A.toArray(), 0.062, 0.05), B[`canela${l}`], ringFur(K, A, lt, 0.075)),
-        add("pe", ell(foot, v3(0, 0.066, -0.085), v3(0.056, 0.046, 0.125)), B[`pe${l}`], cream),
+        (group = `pe${l}`, add("pe", ell(foot, v3(0, 0.066, -0.085), v3(0.056, 0.046, 0.125)), B[`pe${l}`], cream)),
       ],
       ks: [0, 0.03, 0.03],
     });
   }
   {
+    group = "rabo";
     const pts = sampleTail(TAIL_SEGS), prims = [], ks = [];
     let arc = 0;
     for (let i = 0; i < TAIL_SEGS; i++) {
@@ -137,18 +143,22 @@ function buildShapes(bind, joints) {
     branches.push({ name: "rabo", k: 0.045, tau: 0.03, tauChain: 0.03, prims, ks });
   }
   EARS.forEach((e, k) => {
+    group = `orelha${k}`;
     const m = head.clone().multiply(new Matrix4().makeRotationFromQuaternion(e.q).setPosition(e.base));
     const tip = apply(m, v3(0, EAR.len, 0)), base = apply(m, v3(0, 0, 0));
     const along = tip.clone().sub(base).normalize();
-    const fur = (p) => [0.85 * smooth(0.06, 0.09, (p.x - base.x) * along.x + (p.y - base.y) * along.y + (p.z - base.z) * along.z), 0];
+    const fur = (p) => [0.8 * smooth(0.066, 0.096, (p.x - base.x) * along.x + (p.y - base.y) * along.y + (p.z - base.z) * along.z), 0];
     const prim = flatCone(toLocal(m), EAR.len, EAR.r1, EAR.r2, EAR.flat, base.clone().lerp(tip, 0.5).toArray());
     branches.push({ name: "orelha", k: 0.028, tau: 0.014, tauChain: 0.02, prims: [add("orelha", prim, k === 0 ? B.orelhaE : B.orelhaD, fur)], ks: [0] });
   });
   {
-    const puffs = [-1, 1].map((s) => add("focinho", ell(head, v3(0.03 * s, 0.067, -0.119), v3(0.036, 0.029, 0.03)), B.cabeca, cream));
-    const chin = add("queixo", ell(head, v3(0, 0.038, -0.103), v3(0.028, 0.02, 0.024)), B.cabeca, cream);
+    group = "focinho";
+    const puffs = [-1, 1].map((s) => add("focinho", ell(head, v3(0.031 * s, 0.064, -0.12), v3(0.039, 0.031, 0.031)), B.cabeca, cream));
+    const chin = add("queixo", ell(head, v3(0, 0.035, -0.106), v3(0.03, 0.021, 0.025)), B.cabeca, cream);
     branches.push({ name: "focinho", k: 0.012, tau: 0.006, tauChain: 0.01, prims: [...puffs, chin], ks: [0, 0.008, 0.01] });
   }
+  const groups = [...new Set(shapes.map((sh) => sh.group))];
+  for (const sh of shapes) sh.gi = groups.indexOf(sh.group);
   return { shapes, core, branches, coreK: { HIPS, BELLY, WAIST, CHEST, YOKE, SKULL: SKULL_I, CHEEKS } };
 }
 
@@ -225,25 +235,37 @@ function buildField(def) {
     }
     return w;
   }
-  return { prims, combine, activate, primWeights, np, all: () => brOn.fill(1) };
+  return { prims, combine, activate, coreDist, primWeights, np, all: () => brOn.fill(1) };
 }
 
 /** Pesos por osso (até 4) e pelagem num ponto, dadas as distâncias às formas. */
-const scratch = { w: null, bone: null };
+const scratch = { w: null, bone: null, gw: new Float64Array(32), gs: new Float64Array(32) };
 function skinFromDists(def, field, d, p, outIdx, outW, outFur, o) {
   const w = field.primWeights(d, scratch.w || (scratch.w = new Float64Array(field.np)));
   const bw = scratch.bone || (scratch.bone = new Float64Array(64));
+  const gw = scratch.gw, gs = scratch.gs;
   bw.fill(0);
-  let st = 0, cr = 0;
+  gw.fill(0);
+  gs.fill(0);
+  let cr = 0;
   const shapes = def.shapes;
   for (let i = 0; i < shapes.length; i++) {
     if (w[i] < 1e-5) continue;
     bw[shapes[i].bone] += w[i];
     if (outFur && w[i] > 1e-4) {
-      const f = shapes[i].fur(p);
-      st += w[i] * f[0];
+      const f = shapes[i].fur(p), g = shapes[i].gi;
+      gw[g] += w[i];
+      gs[g] += w[i] * f[0];
       cr += w[i] * f[1];
     }
+  }
+  // listras: só as da família dominante, sumindo onde duas famílias se
+  // misturam (ombro, quadril, pescoço, base do rabo) em vez de embaralhar
+  let st = 0;
+  if (outFur) {
+    let g0 = 0;
+    for (let g = 1; g < gw.length; g++) if (gw[g] > gw[g0]) g0 = g;
+    if (gw[g0] > 0) st = (gs[g0] / gw[g0]) * smooth(0.55, 0.85, gw[g0]);
   }
   // os 4 ossos mais pesados
   let sum = 0;
@@ -292,6 +314,11 @@ export function catBody() {
       for (let i = 0; i < np; i++) d[i] = dist(field.prims[i], q.x, q.y, q.z);
       return field.combine(d);
     },
+    /** Distância só do tronco e da cabeça (sem membros), pra costuras do peito. */
+    coreDistance(q) {
+      for (let i = 0; i < np; i++) d[i] = dist(field.prims[i], q.x, q.y, q.z);
+      return field.coreDist(d);
+    },
     /** Pesos (4 ossos) de um detalhe preso no ponto q. */
     skinAt(q, outIdx, outW, o = 0) {
       for (let i = 0; i < np; i++) d[i] = dist(field.prims[i], q.x, q.y, q.z);
@@ -301,16 +328,36 @@ export function catBody() {
   return cache;
 }
 
+/**
+ * Anda de `from` (dentro do corpo) na direção `dir` até sair pela superfície;
+ * devolve o ponto exato da saída e a normal em n.
+ */
+export function rayToBody(body, from, dir, n = new Vector3(), field = body.distance) {
+  const d = dir.clone().normalize(), p = from.clone(), t = new Vector3();
+  let a = 0, b = 0;
+  for (let k = 0; k < 200; k++) {
+    b = a + 0.004;
+    if (field(t.copy(p).addScaledVector(d, b)) > 0) break;
+    a = b;
+  }
+  for (let k = 0; k < 24; k++) {
+    const m = (a + b) / 2;
+    if (field(t.copy(p).addScaledVector(d, m)) > 0) b = m; else a = m;
+  }
+  p.addScaledVector(d, (a + b) / 2);
+  return projectToBody(body, p, n, field);
+}
+
 /** Leva q até a superfície do corpo (Newton no campo); devolve q e a normal em n. */
-export function projectToBody(body, q, n = new Vector3()) {
+export function projectToBody(body, q, n = new Vector3(), field = body.distance) {
   const e = 0.0008, g = new Vector3(), t = new Vector3();
   const grad = () => {
-    const f = (dx, dy, dz) => body.distance(t.set(q.x + dx, q.y + dy, q.z + dz));
+    const f = (dx, dy, dz) => field(t.set(q.x + dx, q.y + dy, q.z + dz));
     g.set(f(e, 0, 0) - f(-e, 0, 0), f(0, e, 0) - f(0, -e, 0), f(0, 0, e) - f(0, 0, -e));
     return g;
   };
   for (let it = 0; it < 8; it++) {
-    const v = body.distance(t.copy(q));
+    const v = field(t.copy(q));
     grad();
     const gg = g.lengthSq();
     if (gg < 1e-14) break;
