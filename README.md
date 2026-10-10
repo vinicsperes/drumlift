@@ -71,11 +71,19 @@ Ele mostra a tab rolando junto com a música, com a coluna atual destacada.
 - **Velocidade** de 50% a 100%. O som fica mais grave quando você desacelera.
 - **Metrônomo** marca as batidas detectadas (o primeiro tempo do compasso é mais agudo).
 
+**Pra ver quem toca o quê:** **Bateria 3D** (`B`) abre um baterista tocando a tab,
+sincronizado com o player (loop e velocidade valem pra ele também). Mostra qual
+membro bate em cada peça: mão direita (MD), mão esquerda (ME), pé direito (PD), pé
+esquerdo (PE). Câmeras `1` baterista, `2` frente, `3` lado (pés) e `4` cima; arraste
+pra girar. **Antecipação** desenha um anel que fecha na peça na hora do golpe. As mãos
+são deduzidas por regras de baterista destro (chimbal na direita cruzando a esquerda na
+caixa, viradas alternando D-E), então podem não ser as que o baterista original usou.
+
 **Pra corrigir:** ligue **Editar** (`E`), clique nas casas pra pôr ou tirar notas
 (`Alt`+clique na caixa = nota fantasma), `Ctrl+Z` desfaz e **Salvar** (`Ctrl+S`) regrava
 `tab.txt`, `drums.mid` e os áudios.
 
-Atalhos: `espaço` tocar/pausar · `←` `→` compasso · `L` loop · `M` metrônomo · `F` seguir a tab.
+Atalhos: `espaço` tocar/pausar · `←` `→` compasso · `L` loop · `M` metrônomo · `B` bateria 3D · `F` seguir a tab.
 
 ## Arquivos gerados
 
@@ -111,7 +119,11 @@ uv run python tests/score.py out/teste songs/teste.truth.json
 
 Resultados atuais (F1): andamento fixo 0.99, acelerando de 96 a 116 BPM 0.98, shuffle em tercina 0.98.
 
+A bateria 3D tem uma página própria pra desenvolvimento, sem áudio: sirva a raiz do
+repositório (`python -m http.server`) e abra `/drumsomething/player/kit3d-dev.html`.
+Detalhes em [`docs/kit3d.md`](docs/kit3d.md).
+
 ## Licenças
 
 - Modelo ADTOF: CC BY-NC-SA 4.0, **só uso não comercial** ([ADTOF](https://github.com/MZehren/ADTOF), [ADTOF-pytorch](https://github.com/xavriley/ADTOF-pytorch)).
-- Demucs: MIT. beat_this: MIT.
+- Demucs: MIT. beat_this: MIT. Three.js: MIT.
