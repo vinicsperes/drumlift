@@ -87,7 +87,8 @@ def build(outdir: Path, title: str, *, subdiv: int | None = None, sensitivity: f
             "kits": kits.write_kits(outdir / "kits", custom_kit)}
     save(outdir, grid, notes, meta)
     shutil.copytree(Path(str(files("drumsomething") / "player")), outdir, dirs_exist_ok=True,
-                    ignore=shutil.ignore_patterns("kit3d-dev.html"))
+                    ignore=shutil.ignore_patterns(
+                        "kit3d-dev.html", "lab.html", "lab", "FBXLoader.js", "NURBS*.js", "fflate.module.js"))
 
     counts = {BY_KEY[k].name: sum(n["piece"] == k for n in notes) for k in ORDER}
     bpm, lo, hi = grid.tempo()

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Laboratório · drumSomething</title>
+<link rel="stylesheet" href="app/style.css">
+<style>
+  html, body { height: auto; overflow: auto; }
+  body { background: var(--paper); color-scheme: light; }
+  .lab-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; padding: 22px 28px 12px; }
+  .lab-head h1 { font-size: clamp(30px, 3.4vw, 46px); }
+  .lab-head .seg { width: 220px; }
+  .lab-views { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 0 16px; }
+  .lab-views figure { margin: 0; }
+  .view { position: relative; height: min(58vh, 560px); border: 1px solid var(--hair); border-radius: 14px; overflow: hidden; background: #ece8e1; }
+  figcaption { padding: 8px 4px 0; font: 12px var(--sans); color: var(--muted); }
+  figcaption b { color: var(--ink); font-weight: 600; }
+  .lab-transport { display: flex; align-items: center; gap: 12px; padding: 14px 20px; }
+  .lab-transport input[type=range] { flex: 1; }
+  .lab-metrics { padding: 4px 20px 40px; max-width: 980px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--hair); }
+  thead th { font: 600 10px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  tbody th { font-weight: 500; color: var(--ink-2); }
+  td { font-variant-numeric: tabular-nums; }
+  td small { color: var(--muted); }
+  tr.ok td:last-child { color: #2e8b45; font-weight: 600; }
+  tr.meh td:last-child { color: #b07800; font-weight: 600; }
+  tr.bad td:last-child { color: #c2185b; font-weight: 600; }
+  #sticks, .credit { color: var(--muted); font-size: 12px; margin-top: 12px; }
+  @media (max-width: 860px) { .lab-views { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header class="lab-head">
+  <div>
+    <p class="eyebrow">drumSomething <span>· laboratório</span></p>
+    <h1 id="title">Real × nosso</h1>
+    <p class="meta" id="meta"></p>
+  </div>
+  <div class="seg" id="styles" role="group" aria-label="Visual do nosso">
+    <button data-style="manequim">Manequim</button>
+    <button data-style="pelucia">Pelúcia</button>
+  </div>
+</header>
+<main class="lab-views">
+  <figure><div class="view" id="real"></div><figcaption><b>Real</b> · captura de movimento (base MMIP), baquetas inferidas</figcaption></figure>
+  <figure><div class="view" id="ours"></div><figcaption><b>Nosso</b> · as mesmas notas do MIDI, no mesmo relógio</figcaption></figure>
+</main>
+<div class="lab-transport">
+  <button class="play" id="play" disabled aria-label="Tocar (espaço)">
+    <svg viewBox="0 0 24 24" class="i-play" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z" /></svg>
+    <svg viewBox="0 0 24 24" class="i-pause" aria-hidden="true"><path d="M7 5h3.6v14H7zM13.4 5H17v14h-3.6z" /></svg>
+  </button>
+  <span class="time" id="time">0:00.0</span>
+  <input type="range" id="scrub" min="0" max="1" step="0.01" value="0" aria-label="Posição">
+</div>
+<section class="lab-metrics">
+  <table id="metrics"></table>
+  <p id="sticks"></p>
+  <p class="credit" id="credit"></p>
+</section>
+<div class="loading" id="loading"><p class="label" id="loading-text">Carregando</p><div class="bar"><i id="loading-bar"></i></div></div>
+<script type="module" src="lab/lab.js"></script>
+</body>
+</html>
