@@ -5,7 +5,10 @@
 //   view.setSong(song); view.setCamera("baterista" | "frente" | "lado" | "cima");
 //   view.setMuted(new Set(["hihat"])); view.setAnticipation(true);
 //   view.setStyle("pelucia" | "manequim"); view.style; view.dispose();
+//   view.setInsets({ top, right, bottom, left }); // px cobertos por painéis por cima
 //
+// Opções: `transparent` (a página desenha o fundo) e `legend: false` (sem a
+// legenda dos membros, quando a página mostra a dela).
 // O módulo não toca áudio e não é dono do relógio: chama getTime() a cada quadro
 // e calcula a pose inteira a partir desse tempo.
 
@@ -29,7 +32,8 @@ export { CAT_COLOR_NAMES, CAT_COLOR_LABELS } from "./felt.js";
 /**
  * @param {HTMLElement} container elemento com tamanho definido; o canvas ocupa ele todo
  * @param {{song?: object, getTime: () => number, camera?: string, anticipation?: boolean,
- *          style?: string, catColors?: string}} opts
+ *          style?: string, catColors?: string, transparent?: boolean, legend?: boolean,
+ *          insets?: {top?: number, right?: number, bottom?: number, left?: number}}} opts
  */
 export function mountKit3D(container, opts = {}) {
   const getTime = typeof opts.getTime === "function" ? opts.getTime : () => 0;
@@ -40,7 +44,7 @@ export function mountKit3D(container, opts = {}) {
 
   let renderer;
   try {
-    renderer = new WebGLRenderer({ antialias: true, powerPreference: "default" });
+    renderer = new WebGLRenderer({ antialias: true, powerPreference: "default", alpha: !!opts.transparent });
   } catch (err) {
     console.warn("kit3d: WebGL indisponível", err);
     root.style.cssText += "display:flex;align-items:center;justify-content:center;padding:16px;text-align:center;opacity:.7;";
@@ -49,10 +53,13 @@ export function mountKit3D(container, opts = {}) {
     const wanted = STYLE_NAMES.includes(opts.style) ? opts.style : DEFAULT_STYLE;
     return {
       setSong: noop, setCamera: noop, setMuted: noop, setAnticipation: noop, setStyle: noop, setCatColors: noop,
+      setInsets: noop,
       get style() { return wanted; }, dispose: () => root.remove(),
     };
   }
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  const transparent = !!opts.transparent;
+  if (transparent) renderer.setClearColor(0x000000, 0);
   const canvas = renderer.domElement;
   canvas.style.cssText = "display:block;width:100%;height:100%;touch-action:none;outline:none;";
   canvas.setAttribute("aria-label", "Bateria 3D: arraste pra girar, role pra aproximar");
@@ -88,18 +95,21 @@ export function mountKit3D(container, opts = {}) {
     legend.append(chip);
     chips[limb] = { chip, dot };
   }
-  root.appendChild(legend);
+  if (opts.legend !== false) root.appendChild(legend);
 
   // ---------- estado ----------
   let prep = prepareSong(opts.song);
   let anticipation = !!opts.anticipation;
   let muted = new Set();
-  let camName = CAMERA_NAMES.includes(opts.camera) ? opts.camera : "baterista";
+  let camName = CAMERA_NAMES.includes(opts.camera) ? opts.camera : "frente";
   let userMoved = false;
   let tween = null;
   let dirty = true;
   let lastT = NaN;
   let width = 0, height = 0;
+  // área livre do canvas (sem os painéis da página por cima), em px
+  const insets = { top: 0, right: 0, bottom: 0, left: 0 };
+  Object.assign(insets, opts.insets || {});
   let raf = 0;
   let disposed = false;
 
@@ -107,6 +117,7 @@ export function mountKit3D(container, opts = {}) {
   const mq = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
   function applyTheme() {
     const th = style.paint(mq ? mq.matches : true);
+    if (transparent) scene.background = null;
     for (const [limb, { chip, dot }] of Object.entries(chips)) {
       dot.style.background = th.limb[limb];
       chip.style.color = th.text;
@@ -120,8 +131,25 @@ export function mountKit3D(container, opts = {}) {
 
   // ---------- câmera ----------
   const tmpPos = new Vector3(), tmpTarget = new Vector3();
+  // A câmera enquadra a área livre: o eixo ótico vai pro centro dela
+  // (setViewOffset) e a distância é a que faz o kit caber nela.
+  function freeRect() {
+    const fw = Math.max(80, width - insets.left - insets.right);
+    const fh = Math.max(80, height - insets.top - insets.bottom);
+    return { fw, fh, cx: insets.left + fw / 2, cy: insets.top + fh / 2 };
+  }
+  function applyViewOffset() {
+    if (!width || !height) return;
+    const { cx, cy } = freeRect();
+    const dx = cx - width / 2, dy = cy - height / 2;
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) camera.clearViewOffset();
+    else camera.setViewOffset(width, height, -dx, -dy, width, height);
+    camera.updateProjectionMatrix();
+  }
   function placeCamera(name, animate) {
-    cameraPose(name, camera.aspect || 1, FOV, tmpPos, tmpTarget);
+    const { fw, fh } = freeRect();
+    const freeFov = height ? (2 * Math.atan(Math.tan((FOV * Math.PI) / 360) * (fh / height)) * 180) / Math.PI : FOV;
+    cameraPose(name, fw / fh, freeFov, tmpPos, tmpTarget);
     if (!animate) {
       tween = null;
       camera.position.copy(tmpPos);
@@ -157,7 +185,7 @@ export function mountKit3D(container, opts = {}) {
     if (!width || !height) return;
     renderer.setSize(width, height, false);
     camera.aspect = width / height;
-    camera.updateProjectionMatrix();
+    applyViewOffset();
     if (!userMoved) placeCamera(camName, false);
     dirty = true;
   }
@@ -249,6 +277,13 @@ export function mountKit3D(container, opts = {}) {
     setCatColors(name) {
       catColors = name;
       style.setCatColors?.(name);
+      dirty = true;
+    },
+    /** Pedaços do canvas cobertos por painéis da página (px): o baterista centraliza no resto. */
+    setInsets(next) {
+      Object.assign(insets, next || {});
+      applyViewOffset();
+      if (!userMoved) placeCamera(camName, !!tween);
       dirty = true;
     },
     get camera() { return camName; },
