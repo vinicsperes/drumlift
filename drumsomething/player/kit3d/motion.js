@@ -14,17 +14,23 @@ const FULL_STROKE = 0.55; // s: tempo pra uma preparação na altura máxima
 // seguinte num arco só, como um corpo jogado pra cima (parábola).
 const BALLISTIC = 0.42;   // s
 const WINDUP = 0.16;      // armada extra antes de um golpe forte (fração da altura)
-export const REST_LIFT = 0.32;
+// Altura de descanso: a baqueta paira uns 6 cm acima da peça (h = 1 ↔ 36 cm de ponta).
+export const REST_LIFT = 0.17;
 
 const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
 const easeOut = (x) => 1 - (1 - x) * (1 - x);
 const smooth = (x) => x * x * (3 - 2 * x);
 const smoothstep = (a, b, x) => smooth(clamp01((x - a) / (b - a)));
 
-/** Altura da preparação (0..1): depende de vel, de ghost e do tempo que sobra. */
+/**
+ * Altura da preparação (h, 1 ↔ 36 cm de ponta). Medida num baterista real: a
+ * baqueta fica baixa nas notas normais (~4 cm) e fracas (~2,5 cm) e sobe
+ * ~13 cm nos acentos; por isso cresce com o cubo da força. Também não passa
+ * do que dá tempo de subir.
+ */
 export function strokeHeight(hit, gap) {
-  const want = hit.ghost ? 0.07 : 0.22 + 0.78 * hit.vel;
-  return Math.max(0.03, Math.min(want, gap / FULL_STROKE));
+  const want = hit.ghost ? 0.035 : 0.04 + 0.5 * hit.vel ** 3;
+  return Math.max(0.025, Math.min(want, gap / FULL_STROKE));
 }
 
 function setState(out, a, b, w, h, travel = 0) {

@@ -17,10 +17,20 @@ const X_AXIS = new Vector3(1, 0, 0);
 // Chicote (método Moeller): o cotovelo e o ombro sobem um instante antes da
 // baqueta. Só mexe na cadeia do braço, não no pulso: a ponta continua exata.
 const WHIP_LEAD = 0.04;   // s de adiantamento do cotovelo
-const WHIP_ELBOW = 0.55;  // quanto o cotovelo sobe com a baqueta toda levantada
-const WHIP_SHOULDER = 0.014; // m que o ombro sobe
+const WHIP_ELBOW = 0.15;  // quanto o cotovelo sobe (no baterista real ele quase não se mexe)
+const WHIP_SHOULDER = 0.004; // m que o ombro sobe
 // Trocando de peça, a mão passa por cima dos aros: levanta mais quanto mais longe.
-const TRAVEL_ARC = 0.85;  // altura extra (fração de h) por metro de distância
+const TRAVEL_ARC = 0.55;  // altura extra (fração de h) por metro de distância
+// Subida da ponta da baqueta com h = 1, e quanto dela vem da mão (o resto é o
+// giro do pulso). Medido num baterista real: nos pratos quase tudo é pulso e
+// dedos; na caixa e nos tons a mão desce junto, ~40% da subida.
+const TIP_MAX = 0.36;
+const HAND_SHARE = { hihat: 0.05, ride: 0.05, crash: 0.25, snare: 0.4, tom1: 0.4, tom2: 0.4, floor: 0.4 };
+const REACH_K = 0.6;      // quanto o tronco gira/inclina na direção das peças longe
+// O corpo "quica" no pulso: o tronco desce e inclina um pouco logo depois de
+// cada batida (no baterista real, a cabeça fica mais baixa a ~0,28 do tempo).
+const BOUNCE = 0.007;     // m
+const BOUNCE_PHASE = 0.28;
 // Pé esquerdo: o calcanhar marca o pulso com a ponta parada no pedal do chimbal.
 const HEEL_LIFT = 0.16;   // rad no meio do tempo
 export const HANDS = ["MD", "ME"];
@@ -93,8 +103,8 @@ export function createRig() {
   const reach = (limb, id) => TORSO_REACH[limb][id] || TORSO_REACH[limb].snare;
   const toe = new Vector3(0, 0, -HIHAT_PEDAL.length);
 
-  /** Calcanhar esquerdo (0..1): sobe no meio de cada tempo e desce na batida, só com a música tocando. */
-  function heelPulse(prep, t) {
+  /** Quanto a música está "rolando" agora (0..1): golpe nos últimos/próximos tempos. */
+  function activity(prep, t) {
     const len = prep.clock.beatLen(t);
     let active = 0;
     for (const l of ["MD", "ME", "PD"]) {
@@ -107,6 +117,10 @@ export function createRig() {
       const d = Math.min(prev ? t - prev.t : Infinity, next ? next.t - t : Infinity);
       active = Math.max(active, 1 - Math.min(1, Math.max(0, (d - len) / len)));
     }
+    return active;
+  }
+  /** Calcanhar esquerdo (0..1): sobe no meio de cada tempo e desce na batida. */
+  function heelPulse(prep, t, active) {
     if (active <= 0) return 0;
     const ph = prep.clock.beatAt(t) % 1;
     return active * Math.pow(Math.sin(Math.PI * (ph < 0 ? ph + 1 : ph)), 2);
@@ -122,13 +136,16 @@ export function createRig() {
     let yaw = 0, lean = 0;
     for (const limb of HANDS) {
       const s = arms[limb].state, ra = reach(limb, s.a), rb = reach(limb, s.b);
-      yaw += ra[0] + (rb[0] - ra[0]) * s.w;
-      lean += ra[1] + (rb[1] - ra[1]) * s.w;
+      yaw += REACH_K * (ra[0] + (rb[0] - ra[0]) * s.w);
+      lean += REACH_K * (ra[1] + (rb[1] - ra[1]) * s.w);
     }
     yaw = Math.max(-TORSO_LIMIT.yaw, Math.min(TORSO_LIMIT.yaw, yaw));
     lean = Math.min(TORSO_LIMIT.lean, lean);
+    const active = activity(prep, t);
     const phase = prep.clock.beatAt(t) % 1;
-    const bob = TORSO_LIMIT.bob * (0.5 + 0.5 * Math.cos(2 * Math.PI * phase));
+    const pulse = active * (0.5 + 0.5 * Math.cos(2 * Math.PI * (phase - BOUNCE_PHASE)));
+    const bob = TORSO_LIMIT.bob * pulse;
+    torso.position.set(pelvis.x, pelvis.y - BOUNCE * pulse, pelvis.z);
     torso.rotation.set(-(BODY.leanBase + lean + bob), yaw, 0);
     torso.updateMatrixWorld(true);
     tmpQ.copy(torso.quaternion);
@@ -144,10 +161,16 @@ export function createRig() {
       // trocando de peça, levanta mais no meio do caminho (por cima dos aros)
       const h = s.h + TRAVEL_ARC * s.travel * ca.H0.distanceTo(cb.H0);
       if (h > 0) {
+        // a ponta sobe h·TIP_MAX; parte disso é a mão subindo, o resto é o pulso girando
+        const sa = HAND_SHARE[s.a] ?? 0.3, share = sa + ((HAND_SHARE[s.b] ?? 0.3) - sa) * s.w;
+        const rise = h * TIP_MAX, handRise = share * rise;
         tmpV.set(d.x, 0, d.z).normalize();
-        tmpH.addScaledVector(UP, BODY.liftUp * h).addScaledVector(tmpV, -BODY.liftBack * h);
+        tmpH.addScaledVector(UP, handRise).addScaledVector(tmpV, -0.45 * handRise);
+        // giro em volta do pulso que sobe a ponta o resto da altura
+        const phi = Math.asin(Math.max(-1, Math.min(1, d.y)));
+        const want = Math.max(-0.99, Math.min(0.99, Math.sin(phi) + (rise - handRise) / BODY.stickFront));
         tmpK.crossVectors(d, UP).normalize();
-        d.applyAxisAngle(tmpK, BODY.liftAngle * h);
+        d.applyAxisAngle(tmpK, Math.asin(want) - phi);
       }
       // chicote: o braço "puxa" a baqueta, adiantado no tempo
       handState(limbs[limb], BODY.home[limb], t + WHIP_LEAD, lead);
@@ -167,7 +190,7 @@ export function createRig() {
     legs.PD.foot.rotation.x = pedalAngle(press);
     // pé esquerdo: gira em volta da ponta (parada no pedal), o calcanhar sobe e desce
     {
-      const f = legs.PE.foot, lift = HEEL_LIFT * heelPulse(prep, t);
+      const f = legs.PE.foot, lift = HEEL_LIFT * heelPulse(prep, t, active);
       tmpV.copy(toe).applyAxisAngle(X_AXIS, HIHAT_PEDAL.angle).add(legs.PE.rest); // ponta, parada
       f.rotation.x = HIHAT_PEDAL.angle - lift;
       tmpK.copy(toe).applyAxisAngle(X_AXIS, f.rotation.x);
