@@ -40,4 +40,4 @@ build-backend = "setuptools.build_meta"
 include = ["drumsomething*"]
 
 [tool.setuptools.package-data]
-drumsomething = ["player/*", "player/kit3d/*", "player/vendor/*"]
+drumsomething = ["player/*", "player/app/*", "player/kit3d/*", "player/vendor/*", "player/vendor/fonts/*"]
