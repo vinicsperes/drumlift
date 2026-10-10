@@ -66,8 +66,9 @@ function assignSingle(g, prev, next, last, clock) {
     n.limb = "MD";
     return;
   }
-  // Caixa sozinha: ME, a não ser que a ME tenha acabado de tocar e a MD esteja mais livre.
-  n.limb = n.t - last.ME < FAST_DRUM && last.MD <= last.ME ? "MD" : "ME";
+  // Caixa sozinha: ME, a não ser que a ME tenha acabado de tocar e a MD esteja
+  // livre. Com as duas ocupadas a ME faz o golpe duplo e a MD segue no prato.
+  n.limb = n.t - last.ME < FAST_DRUM && n.t - last.MD >= FAST_DRUM ? "MD" : "ME";
 }
 
 /** Marca `limb` em cada nota dos grupos (null = nenhum membro toca). */
