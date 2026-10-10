@@ -18,7 +18,7 @@ const RINGS_PER_PIECE = 4;
 // Balanço dos pratos: amplitude (rad), amortecimento (s), frequência (Hz).
 const WOBBLE = { crash: [0.11, 0.6, 2.1], ride: [0.045, 0.5, 2.6], hihat: [0.018, 0.12, 6] };
 
-// Perfil do prato (raio, altura) como fração do raio: cúpula + arco.
+// Perfil do prato, pares (raio, altura) em metros: cúpula + arco até a borda.
 function cymbalProfile(r) {
   return [[0, 0.03], [0.032, 0.028], [0.05, 0.016], [0.07, 0.007], [r, -0.012]];
 }
