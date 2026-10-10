@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bateria 3D · drumSomething</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%23f5b544'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #0e1015; --panel: #161a22; --panel2: #1d222c; --line: #2a303c;
+    --text: #e7e9ef; --muted: #8a92a6; --accent: #f5b544; --accent-ink: #1a1405;
+    --crash: #ff8a65; --ride: #ffd166; --hihat: #4fc3f7; --snare: #f06292; --tom: #b388ff; --kick: #7bd88f;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f6f7f9; --panel: #ffffff; --panel2: #eef0f4; --line: #d9dde5;
+      --text: #1b1f27; --muted: #5d6576; --accent: #c98a12; --accent-ink: #fff;
+      --crash: #d9541e; --ride: #a77b00; --hihat: #0b84c6; --snare: #c2185b; --tom: #6a3fd1; --kick: #2e8b45;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  body { display: flex; flex-direction: column; min-height: 100%; }
+  button, select, input { font: inherit; color: inherit; }
+
+  header.top { flex: none; background: var(--panel); border-bottom: 1px solid var(--line); padding: 10px 16px 8px; }
+  .title-row { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  h1 { font-size: 17px; margin: 0; font-weight: 650; }
+  .meta { color: var(--muted); font-size: 13px; }
+  .status { margin-left: auto; color: var(--muted); font-size: 13px; }
+
+  .transport { display: flex; align-items: center; gap: 10px; margin: 8px 0 6px; }
+  .transport input[type=range] { flex: 1; min-width: 80px; accent-color: var(--accent); }
+  .time { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 52px; }
+  .pos { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 150px; text-align: right; font-size: 13px; }
+
+  .btn, .toggle { background: var(--panel2); border: 1px solid var(--line); border-radius: 7px;
+    padding: 5px 10px; cursor: pointer; white-space: nowrap; }
+  .btn:hover, .toggle:hover { border-color: var(--muted); }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent);
+    width: 40px; height: 34px; font-size: 15px; padding: 0; }
+  .toggle.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+
+  .controls { display: flex; gap: 8px 16px; flex-wrap: wrap; align-items: center; }
+  .opts { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; font-size: 13px; }
+  .opts label, .opts .lbl { display: flex; gap: 6px; align-items: center; color: var(--muted); }
+  .opts select { background: var(--panel2); border: 1px solid var(--line); border-radius: 7px; padding: 4px 6px; }
+  .opts .toggle { padding: 4px 9px; }
+  .mute { font: 600 12px ui-monospace, Menlo, monospace; color: var(--pc); }
+  .mute.off { opacity: .35; text-decoration: line-through; }
+  .p-crash { --pc: var(--crash); } .p-ride { --pc: var(--ride); } .p-hihat { --pc: var(--hihat); }
+  .p-snare { --pc: var(--snare); } .p-tom { --pc: var(--tom); } .p-kick { --pc: var(--kick); }
+
+  main#stage { flex: 1 1 auto; min-height: 340px; position: relative; }
+  footer.help { flex: none; color: var(--muted); font-size: 12px; padding: 8px 16px 14px; }
+  kbd { border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; font-size: 11px; }
+  @media (max-width: 760px) {
+    .transport { flex-wrap: wrap; }
+    .pos { display: none; }
+    .status { margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="title-row">
+    <h1>Bateria 3D</h1>
+    <div id="meta" class="meta"></div>
+    <div id="status" class="status">Carregando…</div>
+  </div>
+  <div class="transport">
+    <button id="play" class="btn primary" title="Tocar / pausar (espaço)">▶</button>
+    <span id="time" class="time">0:00.0</span>
+    <input id="seek" type="range" min="0" max="1000" step="1" value="0" aria-label="Posição">
+    <span id="dur" class="time"></span>
+    <span id="pos" class="pos"></span>
+  </div>
+  <div class="controls">
+    <div class="opts">
+      <label>Música <select id="fixture">
+        <option value="../../tests/fixtures/groove.json">groove (sintético)</option>
+        <option value="../../tests/fixtures/surf.json">surf (música real)</option>
+      </select></label>
+      <label>Velocidade <select id="rate">
+        <option value="0.25">25%</option><option value="0.5">50%</option>
+        <option value="0.75">75%</option><option value="1" selected>100%</option>
+      </select></label>
+      <button id="loop" class="toggle" title="Repetir o compasso atual (L)">Loop</button>
+      <button id="ring" class="toggle" title="Anel que encolhe até a peça no instante do golpe (N)">Antecipação</button>
+    </div>
+    <div id="cams" class="opts"><span class="lbl">Câmera</span></div>
+    <div id="mutes" class="opts"><span class="lbl">Escurecer</span></div>
+  </div>
+</header>
+<main id="stage"></main>
+<footer class="help">
+  <kbd>espaço</kbd> tocar/pausar · <kbd>←</kbd><kbd>→</kbd> compasso · <kbd>L</kbd> loop ·
+  <kbd>N</kbd> antecipação · <kbd>1</kbd>–<kbd>4</kbd> câmeras · arraste pra girar, role pra aproximar.
+  Página de desenvolvimento: sem áudio, o relógio é de mentira.
+</footer>
+
+<script type="module">
+import { mountKit3D, CAMERA_NAMES, CAMERA_LABELS } from "./kit3d/kit3d.js";
+
+const $ = (s) => document.querySelector(s);
+const PIECES = ["crash", "ride", "hihat", "snare", "tom", "kick"];
+const LABELS = { crash: "CR", ride: "RD", hihat: "HH", snare: "SD", tom: "T", kick: "BD" };
+
+let song = null, idxArr = [1], spb = 16;
+const muted = new Set();
+
+// ---------- relógio de mentira ----------
+const clock = { playing: false, base: 0, startedAt: 0, rate: 1, loop: null };
+function songTime() {
+  if (!clock.playing) return clock.base;
+  let t = clock.base + ((performance.now() - clock.startedAt) / 1000) * clock.rate;
+  if (clock.loop) {
+    const [a, b] = clock.loop;
+    if (t >= b) t = a + ((t - a) % (b - a));
+  }
+  return t;
+}
+function setTime(t) { clock.base = t; clock.startedAt = performance.now(); }
+function play() { setTime(songTime()); clock.playing = true; $("#play").textContent = "❚❚"; }
+function pause() { setTime(songTime()); clock.playing = false; $("#play").textContent = "▶"; }
+function setRate(r) { setTime(songTime()); clock.rate = r; }
+
+// ---------- compassos (mesma conta do player) ----------
+function interp(x, xs, ys) {
+  const n = xs.length;
+  if (n < 2) return ys[0] ?? x;
+  if (x <= xs[0]) return ys[0] + (x - xs[0]) * (ys[1] - ys[0]) / (xs[1] - xs[0]);
+  if (x >= xs[n - 1]) return ys[n - 1] + (x - xs[n - 1]) * (ys[n - 1] - ys[n - 2]) / (xs[n - 1] - xs[n - 2]);
+  let lo = 0, hi = n - 1;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (xs[m] <= x) lo = m; else hi = m; }
+  return ys[lo] + (x - xs[lo]) * (ys[hi] - ys[lo]) / (xs[hi] - xs[lo]);
+}
+const stepTime = (step) => interp(step / song.subdiv + (song.offset || 0), idxArr, song.beats);
+const timeToStep = (t) => (interp(t, song.beats, idxArr) - (song.offset || 0)) * song.subdiv;
+const barTime = (bar) => stepTime(bar * spb);
+const barAt = (t) => Math.floor((timeToStep(t) + 0.15) / spb);
+const tMin = () => Math.min(0, barTime(0) - 0.03);
+function loopForBar(bar) { return [barTime(bar) - 0.03, barTime(bar + 1) - 0.03]; }
+
+function seek(t) {
+  t = Math.max(tMin(), Math.min(song.duration, t));
+  if (clock.loop && (t < clock.loop[0] || t >= clock.loop[1])) setLoopBar(barAt(t + 0.03));
+  setTime(t);
+}
+function setLoopBar(bar) {
+  clock.loop = loopForBar(Math.max(0, bar));
+  $("#loop").textContent = `Loop ${Math.max(0, bar) + 1}`;
+}
+function toggleLoop() {
+  if (clock.loop) { setTime(songTime()); clock.loop = null; $("#loop").textContent = "Loop"; }
+  else {
+    const t = songTime();
+    setLoopBar(barAt(t + 0.03));
+    if (t < clock.loop[0] || t >= clock.loop[1]) setTime(clock.loop[0]); else setTime(t);
+  }
+  $("#loop").classList.toggle("on", !!clock.loop);
+}
+
+// ---------- vista 3D ----------
+const view = mountKit3D($("#stage"), { song: null, getTime: songTime });
+window.view = view;
+window.devClock = { clock, songTime, setTime, play, pause, seek, setRate, toggleLoop, barTime, barAt };
+
+for (const name of CAMERA_NAMES) {
+  const b = document.createElement("button");
+  b.className = "toggle" + (name === view.camera ? " on" : "");
+  b.dataset.cam = name;
+  b.textContent = CAMERA_LABELS[name];
+  $("#cams").append(b);
+}
+function setCamera(name) {
+  view.setCamera(name);
+  for (const b of document.querySelectorAll("[data-cam]")) b.classList.toggle("on", b.dataset.cam === name);
+}
+$("#cams").addEventListener("click", (e) => { const n = e.target.dataset.cam; if (n) setCamera(n); });
+
+for (const p of PIECES) {
+  const b = document.createElement("button");
+  b.className = `toggle mute p-${p}`;
+  b.dataset.piece = p;
+  b.textContent = LABELS[p];
+  $("#mutes").append(b);
+}
+$("#mutes").addEventListener("click", (e) => {
+  const p = e.target.dataset.piece; if (!p) return;
+  muted.has(p) ? muted.delete(p) : muted.add(p);
+  e.target.classList.toggle("off", muted.has(p));
+  view.setMuted(muted);
+});
+
+// ---------- carregamento ----------
+function fmt(t) { const s = Math.abs(t); return `${t < 0 ? "-" : ""}${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, "0")}`; }
+async function load(url) {
+  $("#status").textContent = "Carregando…";
+  try {
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    song = await res.json();
+  } catch (e) {
+    $("#status").textContent = `Erro ao carregar ${url}: ${e.message}`;
+    console.error(e);
+    return;
+  }
+  idxArr = song.beats.map((_, i) => i);
+  spb = song.beats_per_bar * song.subdiv;
+  clock.loop = null; $("#loop").classList.remove("on"); $("#loop").textContent = "Loop";
+  setTime(0);
+  view.setSong(song);
+  for (const p of PIECES) {
+    const info = (song.pieces || []).find((x) => x.key === p);
+    const b = document.querySelector(`[data-piece="${p}"]`);
+    if (info) { b.textContent = info.label; b.title = info.name; }
+  }
+  $("#meta").textContent = `${song.title} · ~${Math.round(song.tempo)} BPM · ${song.notes.length} notas`;
+  $("#dur").textContent = fmt(song.duration);
+  $("#status").textContent = "";
+}
+
+const params = new URLSearchParams(location.search);
+const custom = params.get("song");
+if (custom) {
+  const known = [...$("#fixture").options].find((o) => o.value === custom);
+  if (!known) $("#fixture").add(new Option(custom.split("/").pop(), custom), 0);
+  $("#fixture").value = custom;
+}
+$("#fixture").addEventListener("change", (e) => load(e.target.value));
+load($("#fixture").value);
+
+// ---------- controles ----------
+$("#play").onclick = () => (clock.playing ? pause() : play());
+$("#rate").onchange = (e) => setRate(+e.target.value);
+$("#loop").onclick = toggleLoop;
+let ringOn = false;
+function toggleRing() { ringOn = !ringOn; view.setAnticipation(ringOn); $("#ring").classList.toggle("on", ringOn); }
+$("#ring").onclick = toggleRing;
+let seeking = false;
+$("#seek").addEventListener("input", () => {
+  if (!song) return;
+  seeking = true;
+  seek(tMin() + ($("#seek").value / 1000) * (song.duration - tMin()));
+});
+$("#seek").addEventListener("change", () => { seeking = false; });
+
+addEventListener("keydown", (e) => {
+  if (!song || e.target.tagName === "SELECT" || e.ctrlKey || e.metaKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k === " ") { e.preventDefault(); clock.playing ? pause() : play(); }
+  else if (k === "arrowleft") { e.preventDefault(); seek(barTime(Math.max(0, barAt(songTime() + 0.03) - 1)) - 0.03); }
+  else if (k === "arrowright") { e.preventDefault(); seek(barTime(barAt(songTime() + 0.03) + 1) - 0.03); }
+  else if (k === "l") toggleLoop();
+  else if (k === "n") toggleRing();
+  else if (k >= "1" && k <= "4") setCamera(CAMERA_NAMES[+k - 1]);
+});
+
+function tick() {
+  requestAnimationFrame(tick);
+  if (!song) return;
+  let t = songTime();
+  if (clock.playing && !clock.loop && t > song.duration) { pause(); setTime(song.duration); t = song.duration; }
+  $("#time").textContent = fmt(t);
+  if (!seeking) $("#seek").value = Math.round(((t - tMin()) / (song.duration - tMin())) * 1000);
+  const step = Math.floor(timeToStep(t) + 0.15), bar = Math.floor(step / spb);
+  const beat = Math.floor((step - bar * spb) / song.subdiv) + 1;
+  $("#pos").textContent = bar >= 0 ? `compasso ${bar + 1} · tempo ${beat}` : "";
+}
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>
