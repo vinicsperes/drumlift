@@ -9,7 +9,7 @@ export const CAMERA_LABELS = { baterista: "Baterista", frente: "Frente", lado: "
 const PRESETS = {
   // Por cima do ombro esquerdo: num kit de destro é ali que acontece quase tudo
   // (chimbal, caixa, mão cruzada) e a cabeça não fica na frente das mãos.
-  baterista: { pos: [-0.5, 2.3, 0.8], target: [0.06, 0.76, -0.4], fit: 0.7 },
+  baterista: { pos: [-0.5, 2.3, 0.8], target: [0.06, 0.8, -0.4], fit: 0.88 },
   frente: { pos: [0.05, 1.45, -2.45], target: [0.08, 0.78, -0.25], fit: 0.85 },
   // de lado, um pouco por trás, pra que o surdo não esconda os pés
   lado: { pos: [1.95, 1.0, 1.15], target: [0.05, 0.62, -0.2], fit: 0.85 },

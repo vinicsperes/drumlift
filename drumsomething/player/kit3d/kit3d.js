@@ -224,7 +224,7 @@ export function mountKit3D(container, opts = {}) {
     // Ganchos pra testes; não fazem parte do contrato.
     _debug: {
       get prep() { return prep; },
-      kit, avatar, renderer,
+      kit, avatar, renderer, camera, controls,
       /** Calcula a pose no tempo t (sem desenhar). O próximo quadro volta pro getTime(). */
       pose(t) { pose(t); dirty = true; },
       /**
