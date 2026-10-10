@@ -185,3 +185,42 @@ do golpe, e trocas de peça com mínimo jerk.
 - **As baquetas não foram capturadas:** são inferidas pela mão e pelo MIDI.
 - **O kit deles é diferente:** por isso tudo é descrito em relação ao alvo, com
   o IK no fim.
+
+## Resultados
+
+### Fase 1: laboratório (feito)
+
+`uv run python tools/mmip.py fetch 1` baixa a primeira performance (rock
+alternativo, 75 BPM, 1245 notas). Pra abrir o laboratório, sirva a raiz do
+repositório e abra `/drumsomething/player/lab.html?take=/songs/mmip/01/`.
+
+As baquetas inferidas caem num raio de 5 a 7 cm em volta do ride, do chimbal e
+da caixa. Nos tons o raio é maior (17 a 21 cm), porque há menos golpes e o
+mapeamento dos tons do kit eletrônico é incerto.
+
+Primeira calibração (nosso ÷ real, na performance 01):
+
+| métrica | antes | depois |
+|---|---|---|
+| preparação no acento | 1,41× | 1,25× |
+| preparação normal | 3,22× | 1,65× |
+| preparação fraca | 6,28× | 1,66× |
+| altura × força | 0,46× | 1,10× |
+| pulso ÷ ponta, pratos | 4,01× | 1,04× |
+| pulso ÷ ponta, tambores | 0,48× | 1,00× |
+| cotovelo ÷ ponta, pratos | 6,38× | 1,55× |
+| cotovelo ÷ ponta, tambores | 2,73× | 2,95× |
+| arco nas trocas | 1,83× | 1,11× |
+| balanço do peito | 1,43× | 0,92× |
+| balanço da cabeça | 2,02× | 1,28× |
+| aceno da cabeça no pulso | 0,44× | 1,14× (mesma fase: 0,28 do tempo) |
+
+O golpe continua exato (0 mm em 771 notas de mão e 272 de bumbo nas
+fixtures). Ainda falta:
+- **cotovelo nos tambores:** a mão sobe 40% e o IK leva o cotovelo junto. O
+  esqueleto novo (fase 2) vai girar o antebraço em volta do cotovelo;
+- **mão parada:** a do real se mexe muito mais. Precisa olhar se é ruído da
+  captura;
+- **jerk:** a medida está dominada pelo ruído da roupa de sensores. Precisa
+  filtrar o real antes de comparar.
+
