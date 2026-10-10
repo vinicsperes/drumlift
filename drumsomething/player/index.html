@@ -335,9 +335,26 @@ function startTracks(at, offset) {
   }
   return srcs;
 }
+// Tempo do contexto de áudio que está saindo no alto-falante agora. ctx.currentTime anda
+// em degraus (no Linux, blocos de ~10 ms) e fica adiantado pela latência de saída; o par
+// contextTime/performanceTime do getOutputTimestamp deixa interpolar com o relógio da tela.
+const heard = { t: 0, at: 0 };
+function heardTime() {
+  const now = performance.now();
+  const ts = ctx.getOutputTimestamp ? ctx.getOutputTimestamp() : null;
+  let t = ts && ts.performanceTime > 0
+    ? ts.contextTime + (now - ts.performanceTime) / 1000
+    : ctx.currentTime - (ctx.outputLatency || 0) - (ctx.baseLatency || 0);
+  // A estimativa oscila uns milissegundos; segue a previsão contínua e corrige a deriva aos
+  // poucos. Diferença grande (seek, travada do sistema) é aceita na hora.
+  const predicted = heard.t + (now - heard.at) / 1000;
+  if (heard.at && Math.abs(t - predicted) < 0.03) t = predicted + (t - predicted) * 0.1;
+  heard.t = t; heard.at = now;
+  return t;
+}
 function songTime() {
   if (!st.playing) return st.pausedAt;
-  const now = ctx.currentTime; let seg = st.segs[0];
+  const now = heardTime(); let seg = st.segs[0];
   for (const s of st.segs) if (s.ctx <= now) seg = s;
   return seg.song + Math.max(0, now - seg.ctx) * st.rate;
 }
