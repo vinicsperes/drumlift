@@ -4,7 +4,7 @@
 
 import {
   CircleGeometry, Color, CylinderGeometry, DoubleSide, Group, LatheGeometry,
-  Mesh, MeshBasicMaterial, MeshLambertMaterial, BoxGeometry, Quaternion,
+  InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, BoxGeometry, Quaternion,
   RingGeometry, TorusGeometry, Vector2, Vector3,
 } from "../vendor/three.module.min.js";
 import {
@@ -42,17 +42,29 @@ export function createKit() {
   const floorMat = keep(new MeshLambertMaterial());
   const rodGeo = keep(new CylinderGeometry(1, 1, 1, 8, 1));
 
-  const tmpA = new Vector3(), tmpB = new Vector3(), tmpQ = new Quaternion();
+  const tmpA = new Vector3(), tmpB = new Vector3(), tmpS = new Vector3();
+  const tmpQ = new Quaternion(), tmpM = new Matrix4();
 
-  function rod(parent, a, b, r, mat = chrome) {
+  // Tubos de cromo. Os parados viram uma InstancedMesh só (um draw call pra
+  // todas as estantes); `dynamic` é pra peça que se mexe, como o batedor.
+  const rodMatrices = [];
+  function rod(parent, a, b, r, dynamic = false) {
     tmpA.set(...a); tmpB.set(...b);
     const len = tmpA.distanceTo(tmpB);
-    const m = new Mesh(rodGeo, mat);
-    m.scale.set(r, len, r);
-    m.position.copy(tmpA).add(tmpB).multiplyScalar(0.5);
-    m.quaternion.setFromUnitVectors(UP, tmpB.sub(tmpA).normalize());
-    parent.add(m);
-    return m;
+    const pos = tmpA.clone().add(tmpB).multiplyScalar(0.5);
+    tmpQ.setFromUnitVectors(UP, tmpB.sub(tmpA).normalize());
+    tmpS.set(r, len, r);
+    if (dynamic) {
+      const m = new Mesh(rodGeo, chrome);
+      m.position.copy(pos);
+      m.quaternion.copy(tmpQ);
+      m.scale.copy(tmpS);
+      parent.add(m);
+      return;
+    }
+    tmpM.compose(pos, tmpQ, tmpS);
+    if (parent !== group) { parent.updateMatrix(); tmpM.premultiply(parent.matrix); }
+    rodMatrices.push(tmpM.clone());
   }
   function tripod(parent, x, z, top, spread = 0.2, r = 0.008) {
     rod(parent, [x, 0.2, z], [x, top, z], r);
@@ -221,7 +233,7 @@ export function createKit() {
   const beater = new Group();
   beater.position.set(...P.beaterPivot);
   group.add(beater);
-  rod(beater, [0, 0, 0], [0, P.beaterLen, 0], 0.004);
+  rod(beater, [0, 0, 0], [0, P.beaterLen, 0], 0.004, true);
   const felt = new Mesh(keep(new CylinderGeometry(P.feltR, P.feltR, 0.05, 16)), dark);
   felt.rotation.z = Math.PI / 2;
   felt.position.y = P.beaterLen;
@@ -250,6 +262,12 @@ export function createKit() {
   const rug = new Mesh(rugGeo, floorMat);
   rug.position.set(0.1, 0, -0.3);
   group.add(rug);
+
+  const rods = new InstancedMesh(rodGeo, chrome, rodMatrices.length);
+  rodMatrices.forEach((m, i) => rods.setMatrixAt(i, m));
+  rods.computeBoundingSphere();
+  group.add(rods);
+  keep(rods); // InstancedMesh.dispose() libera o buffer das instâncias
 
   group.updateMatrixWorld(true);
 
