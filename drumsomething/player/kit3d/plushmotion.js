@@ -29,6 +29,41 @@ export function softWobble(hits, t, amp, tau, freq, fade = 0.12) {
 }
 
 /**
+ * Prato como pêndulo esférico amortecido. Cada golpe dá um impulso que inclina
+ * o prato pro lado onde a baqueta bateu (`dir` = direção do contato no plano
+ * do prato, [x, z]). O prato tem dois modos de balanço com frequências um
+ * pouco diferentes, em eixos girados: um golpe que não cai em cima de um eixo
+ * vira uma elipse que vai rodando (a borda "gira", como num prato de verdade).
+ * Soma as respostas dos golpes recentes e assenta suavemente antes do próximo
+ * golpe na mesma peça, pra baqueta encostar na superfície que se vê.
+ * Devolve [rotação em x, rotação em z] (rad) no frame do prato.
+ */
+export function cymbalSwing(hits, t, { amp, tau, freq, split = 0.08, axis = 0.6, fade = 0.14 }, dir, out = [0, 0]) {
+  out[0] = 0; out[1] = 0;
+  const i = lastAtOrBefore(hits, t);
+  if (i < 0) return out;
+  // eixo de inclinação de um empurrão pra baixo em `dir`: (θx, θz) = (dz, -dx)
+  const tx = dir[1], tz = -dir[0];
+  const c = Math.cos(axis), sn = Math.sin(axis);
+  const c1 = tx * c + tz * sn, c2 = -tx * sn + tz * c; // componentes nos dois modos
+  const w1 = 2 * Math.PI * freq, w2 = w1 * (1 + split);
+  for (let k = i, n = 0; k >= 0 && n < 8; k--, n++) {
+    const s = t - hits[k].t;
+    if (s > tau * 6) break;
+    const e = amp * (hits[k].ghost ? 0.25 : hits[k].vel) * Math.exp(-s / tau);
+    const m1 = e * c1 * Math.sin(w1 * s), m2 = e * c2 * Math.sin(w2 * s);
+    out[0] += m1 * c - m2 * sn;
+    out[1] += m1 * sn + m2 * c;
+  }
+  const next = hits[i + 1];
+  if (next) {
+    const gap = next.t - hits[i].t, f = Math.min(fade, gap * 0.5), s = t - hits[i].t;
+    if (s > gap - f) { const k = smooth((gap - s) / f); out[0] *= k; out[1] *= k; }
+  }
+  return out;
+}
+
+/**
  * Soma de impulsos amortecidos dos golpes recentes: cada golpe dá um empurrão
  * que sobe até 1 em `tau` segundos e some devagar (s/τ·e^(1-s/τ)), começando
  * `delay` segundos depois da nota. Contínuo no tempo.

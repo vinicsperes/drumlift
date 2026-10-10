@@ -15,18 +15,29 @@ import {
   InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, Object3D, Quaternion, RingGeometry, Skeleton, SkinnedMesh,
   SphereGeometry, TorusGeometry, Vector3,
 } from "../vendor/three.module.min.js";
-import { CYMBALS, DRUMS, HIHAT_PEDAL, KICK, KICK_PEDAL, THRONE } from "./layout.js";
+import { CONTACTS, CYMBALS, DRUMS, HIHAT_PEDAL, KICK, KICK_PEDAL, THRONE } from "./layout.js";
 import { beaterAngle, cymbalProfile, pedalAngle, placeFrame, standRods } from "./pieces.js";
 import { INSTANCE_PIECE, upperBound } from "./timeline.js";
 import { flash, footPress } from "./motion.js";
-import { softWobble } from "./plushmotion.js";
+import { cymbalSwing, softWobble } from "./plushmotion.js";
 import { RINGS_PER_PIECE } from "./rings.js";
 import { plushMaterial, setSlot, setSlotEmissive } from "./felt.js";
 import { cushionProfile, ellipsoid, lathe, mergeSkinned, pillow, stitchGeometry, stitchLine } from "./shapes.js";
 
 const UP = new Vector3(0, 1, 0);
-// Prato molenga: amplitude (rad), amortecimento (s), frequência (Hz).
-const FLOP = { crash: [0.15, 0.5, 1.7], ride: [0.065, 0.42, 2.1], hihat: [0.028, 0.14, 4.2] };
+// Prato molenga: amplitude (rad), amortecimento (s), frequência (Hz). O crash
+// balança largo e demorado; o ride, pesado, pouco; o chimbal fechado só treme.
+const FLOP = {
+  crash: { amp: 0.17, tau: 0.75, freq: 1.45 },
+  ride: { amp: 0.06, tau: 0.6, freq: 1.9 },
+  hihat: { amp: 0.026, tau: 0.13, freq: 4.2 },
+};
+// direção (no plano do prato) de onde a baqueta costuma bater: a da mão direita
+const HIT_DIR = Object.fromEntries(Object.keys(FLOP).map((id) => {
+  const [x, z] = CONTACTS[id].MD, l = Math.hypot(x, z) || 1;
+  return [id, [x / l, z / l]];
+}));
+const swing = [0, 0];
 const SQUASH = { tau: 0.07, freq: 5.5, dip: 0.007 }; // dip: quanto a pele desce (m) num golpe forte
 const CYM_T = 0.009; // espessura do prato de feltro
 
@@ -370,9 +381,10 @@ export function createPlushKit() {
       if (it.kind === "cymbal") {
         setSlotEmissive(mat, SL[`gold_${it.id}`], c || black, 0.22 * f);
         setSlotEmissive(mat, SL[`accent_${it.id}`], c || black, 0.3 * f);
-        const [amp, tau, freq] = FLOP[it.id];
-        it.pivot.rotation.x = softWobble(hits, t, amp, tau, freq, 0.14);
-        it.flop.scale.y = 1 + softWobble(hits, t, 0.45, tau * 0.6, freq * 2.2, 0.1);
+        const fl = FLOP[it.id];
+        cymbalSwing(hits, t, fl, HIT_DIR[it.id], swing);
+        it.pivot.rotation.set(swing[0], 0, swing[1]);
+        it.flop.scale.y = 1 + softWobble(hits, t, 0.45, fl.tau * 0.45, fl.freq * 2.4, 0.1);
       } else {
         if (!isMuted && c) setSlot(mat, SL[`head_${it.id}`], tmpC.copy(colors.head).lerp(c, 0.35 * f));
         setSlotEmissive(mat, SL[`head_${it.id}`], c || black, 0.2 * f);
@@ -420,7 +432,7 @@ export function createPlushKit() {
   /** Debug: quanto a superfície da peça está fora do lugar agora (m ou rad). */
   function deform(id) {
     const it = inst[id];
-    if (it.kind === "cymbal") return Math.abs(it.pivot.rotation.x) + Math.abs(it.flop.scale.y - 1) * 0.02;
+    if (it.kind === "cymbal") return Math.abs(it.pivot.rotation.x) + Math.abs(it.pivot.rotation.z) + Math.abs(it.flop.scale.y - 1) * 0.02;
     return Math.abs(it.depth * (1 - it.squash.scale.y)) + Math.abs(it.head.position.y);
   }
 
