@@ -268,7 +268,7 @@ async function init() {
   buffers.click = makeClick(1500); buffers.clickDown = makeClick(2200);
   status.textContent = "";
   $("#play").disabled = false;
-  if (pref("kit3d") === "1") toggleKit3D();
+  if (pref("kit3d") !== "0") toggleKit3D();
   requestAnimationFrame(frame);
 }
 
