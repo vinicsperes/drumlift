@@ -222,7 +222,7 @@ export function polygonize(field, { cell, reach, margin = 0.02, block = 4 }) {
       grad(x, y, z, g);
       const gg = g[0] * g[0] + g[1] * g[1] + g[2] * g[2];
       if (gg > 1e-12) {
-        const st = v / gg;
+        const st = (v * 4 * e) / gg; // o gradiente do tetraedro vale 4e·∇f
         let dx = -g[0] * st, dy = -g[1] * st, dz = -g[2] * st;
         // não deixa o vértice fugir pra longe da célula (dobras duras)
         const dd = Math.hypot(dx, dy, dz);
