@@ -1,9 +1,10 @@
 // Bateria 3D: um baterista tocando a tab em sincronia com a música.
 //
 //   import { mountKit3D } from "./kit3d/kit3d.js";
-//   const view = mountKit3D(container, { song, getTime: () => seconds });
+//   const view = mountKit3D(container, { song, getTime: () => seconds, style: "pelucia" });
 //   view.setSong(song); view.setCamera("baterista" | "frente" | "lado" | "cima");
-//   view.setMuted(new Set(["hihat"])); view.setAnticipation(true); view.dispose();
+//   view.setMuted(new Set(["hihat"])); view.setAnticipation(true);
+//   view.setStyle("pelucia" | "manequim"); view.style; view.dispose();
 //
 // O módulo não toca áudio e não é dono do relógio: chama getTime() a cada quadro
 // e calcula a pose inteira a partir desse tempo.
@@ -11,7 +12,7 @@
 import { PerspectiveCamera, Scene, Vector3, WebGLRenderer } from "../vendor/three.module.min.js";
 import { OrbitControls } from "../vendor/OrbitControls.js";
 import { prepareSong } from "./timeline.js";
-import { createManequim } from "./manequim.js";
+import { DEFAULT_STYLE, STYLE_NAMES, createStyle } from "./styles.js";
 import { CAMERA_NAMES, cameraPose } from "./cameras.js";
 import { LIMB_NAMES } from "./theme.js";
 
@@ -19,10 +20,13 @@ const FOV = 42;
 const CAMERA_TWEEN = 0.6; // s
 
 export { CAMERA_NAMES, CAMERA_LABELS } from "./cameras.js";
+export { STYLE_NAMES, STYLE_LABELS } from "./styles.js";
+export { CAT_COLOR_NAMES, CAT_COLOR_LABELS } from "./felt.js";
 
 /**
  * @param {HTMLElement} container elemento com tamanho definido; o canvas ocupa ele todo
- * @param {{song?: object, getTime: () => number, camera?: string, anticipation?: boolean}} opts
+ * @param {{song?: object, getTime: () => number, camera?: string, anticipation?: boolean,
+ *          style?: string, catColors?: string}} opts
  */
 export function mountKit3D(container, opts = {}) {
   const getTime = typeof opts.getTime === "function" ? opts.getTime : () => 0;
@@ -39,7 +43,11 @@ export function mountKit3D(container, opts = {}) {
     root.style.cssText += "display:flex;align-items:center;justify-content:center;padding:16px;text-align:center;opacity:.7;";
     root.textContent = "Não deu pra abrir a bateria 3D: o navegador não liberou o WebGL.";
     const noop = () => {};
-    return { setSong: noop, setCamera: noop, setMuted: noop, setAnticipation: noop, dispose: () => root.remove() };
+    const wanted = STYLE_NAMES.includes(opts.style) ? opts.style : DEFAULT_STYLE;
+    return {
+      setSong: noop, setCamera: noop, setMuted: noop, setAnticipation: noop, setStyle: noop, setCatColors: noop,
+      get style() { return wanted; }, dispose: () => root.remove(),
+    };
   }
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   const canvas = renderer.domElement;
@@ -49,7 +57,9 @@ export function mountKit3D(container, opts = {}) {
 
   const scene = new Scene();
   const camera = new PerspectiveCamera(FOV, 1, 0.05, 30);
-  const style = createManequim({ renderer, scene });
+  let styleName = STYLE_NAMES.includes(opts.style) ? opts.style : DEFAULT_STYLE;
+  let catColors = opts.catColors;
+  let style = createStyle(styleName, { renderer, scene }, { catColors });
   scene.add(style.group);
 
   const controls = new OrbitControls(camera, canvas);
@@ -80,6 +90,7 @@ export function mountKit3D(container, opts = {}) {
   // ---------- estado ----------
   let prep = prepareSong(opts.song);
   let anticipation = !!opts.anticipation;
+  let muted = new Set();
   let camName = CAMERA_NAMES.includes(opts.camera) ? opts.camera : "baterista";
   let userMoved = false;
   let tween = null;
@@ -175,6 +186,27 @@ export function mountKit3D(container, opts = {}) {
   }
   raf = requestAnimationFrame(frame);
 
+  // ---------- estilo ----------
+  // Troca ao vivo: câmera, controles, tempo e peças silenciadas ficam; o estilo
+  // anterior libera geometrias, materiais e texturas antes do novo nascer.
+  function setStyle(name) {
+    if (!STYLE_NAMES.includes(name) || name === styleName || disposed) return;
+    scene.remove(style.group);
+    style.dispose();
+    styleName = name;
+    style = createStyle(name, { renderer, scene }, { catColors });
+    scene.add(style.group);
+    style.setMuted(muted);
+    applyTheme();
+    dirty = true;
+  }
+
+  // Compatível com o _debug.avatar de antes: esqueleto + ponta da baqueta.
+  const avatarView = () => ({
+    ...style.avatar, configs: style.rig.configs, arms: style.rig.arms, legs: style.rig.legs,
+    TIP_R: style.rig.TIP_R, tipWorld: style.tipWorld,
+  });
+
   // ---------- API ----------
   const view = {
     setSong(song) { prep = prepareSong(song); dirty = true; },
@@ -184,9 +216,17 @@ export function mountKit3D(container, opts = {}) {
       userMoved = false;
       placeCamera(name, true);
     },
-    setMuted(pieces) { style.setMuted(pieces); dirty = true; },
+    setMuted(pieces) { muted = new Set(pieces || []); style.setMuted(muted); dirty = true; },
     setAnticipation(on) { anticipation = !!on; dirty = true; },
+    setStyle,
+    /** Paleta do gato ("laranja" | "cinza" | "frajola"); por enquanto só na página de desenvolvimento. */
+    setCatColors(name) {
+      catColors = name;
+      style.setCatColors?.(name);
+      dirty = true;
+    },
     get camera() { return camName; },
+    get style() { return styleName; },
     dispose() {
       if (disposed) return;
       disposed = true;
@@ -204,7 +244,11 @@ export function mountKit3D(container, opts = {}) {
     // Ganchos pra testes; não fazem parte do contrato.
     _debug: {
       get prep() { return prep; },
-      kit: style.kit, avatar: style.avatar, rig: style.rig, renderer, camera, controls, scene,
+      get kit() { return style.kit; },
+      get avatar() { return avatarView(); },
+      get rig() { return style.rig; },
+      get styleObj() { return style; },
+      renderer, camera, controls, scene,
       /** Calcula a pose no tempo t (sem desenhar). O próximo quadro volta pro getTime(). */
       pose(t) { pose(t); dirty = true; },
       /**
@@ -221,6 +265,8 @@ export function mountKit3D(container, opts = {}) {
       },
       /** Distância (m) do batedor até a pele do bumbo, no tempo t. */
       beaterGap(t) { pose(t); dirty = true; return style.beaterGap(); },
+      /** Quanto a superfície da peça está fora do lugar no tempo t (estilo pelúcia; 0 no manequim). */
+      deform(id, t) { pose(t); dirty = true; return style.kit.deform ? style.kit.deform(id) : 0; },
       /** IK alcançou os alvos no tempo t? */
       reached(t) {
         pose(t);
@@ -229,6 +275,9 @@ export function mountKit3D(container, opts = {}) {
         return { MD: arms.MD.reached, ME: arms.ME.reached, PD: legs.PD.reached, PE: legs.PE.reached };
       },
       info() { return { ...renderer.info.render }; },
+      memory() { return { ...renderer.info.memory }; },
+      /** Desenha um quadro agora (pra medir draw calls e memória). */
+      render() { pose(readTime()); renderer.render(scene, camera); return { ...renderer.info.render }; },
     },
   };
   placeCamera(camName, false);
