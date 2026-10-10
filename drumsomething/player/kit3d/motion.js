@@ -10,6 +10,10 @@ const REST_GAP = 1.1;     // s: intervalo a partir do qual a mão volta a descan
 const SETTLE = 0.36;      // s: tempo pra ir da peça até a posição de descanso
 const APPROACH = 0.5;     // s: saindo do descanso, quanto antes do golpe começa a preparar
 const FULL_STROKE = 0.55; // s: tempo pra uma preparação na altura máxima
+// Abaixo disso a baqueta não para no alto: sai do rebote e cai no golpe
+// seguinte num arco só, como um corpo jogado pra cima (parábola).
+const BALLISTIC = 0.42;   // s
+const WINDUP = 0.16;      // armada extra antes de um golpe forte (fração da altura)
 export const REST_LIFT = 0.32;
 
 const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
@@ -23,16 +27,21 @@ export function strokeHeight(hit, gap) {
   return Math.max(0.03, Math.min(want, gap / FULL_STROKE));
 }
 
-function setState(out, a, b, w, h) {
-  out.a = a; out.b = b; out.w = w; out.h = h;
+function setState(out, a, b, w, h, travel = 0) {
+  out.a = a; out.b = b; out.w = w; out.h = h; out.travel = travel;
   return out;
 }
 
 /**
  * Estado de uma mão no tempo t.
  * Resultado: a pose base vai da configuração de golpe da peça `a` pra da peça
- * `b` com peso `w`; `h` (0..1) é quanto a baqueta está levantada. Em `h = 0` e
- * `w = 1` a ponta da baqueta está encostada na peça `b`.
+ * `b` com peso `w`; `h` (0..1) é quanto a baqueta está levantada; `travel`
+ * (0..1) é quanto a mão está no meio de uma troca de peça (pra passar por cima
+ * dos aros). Em `h = 0` e `w = 1` a ponta da baqueta está encostada na peça `b`.
+ *
+ * Golpes próximos viram um arco balístico (rebote que já é a preparação do
+ * próximo); golpes espaçados sobem, esperam e dão uma armada antes de descer,
+ * maior quanto mais forte for o golpe — como a mão de um baterista.
  * @param {{t:number, inst:string, vel:number, ghost:boolean}[]} hits golpes do membro, em ordem
  * @param {string} home peça de descanso (onde a mão fica parada)
  */
@@ -42,38 +51,58 @@ export function handState(hits, home, t, out = {}) {
   const B = i + 1 < hits.length ? hits[i + 1] : null;
 
   if (A && B && B.t - A.t <= REST_GAP) {
-    // Golpe seguido de golpe: rebote até a altura do próximo, espera, desce.
     const gap = B.t - A.t, hB = strokeHeight(B, gap);
-    const dUp = Math.min(UP, 0.45 * gap), dDown = Math.min(DOWN, 0.5 * gap);
-    const s = t - A.t, r = B.t - t;
+    const s = t - A.t, r = B.t - t, u = s / gap;
     let h;
-    if (s < dUp) h = hB * easeOut(s / dUp);
-    else if (r > dDown) h = hB;
-    else { const u = 1 - r / dDown; h = hB * (1 - u * u); }
+    if (gap < BALLISTIC) {
+      // um arco só: sobe no rebote e cai no golpe seguinte (pico um pouco antes do meio)
+      const v = Math.pow(u, 0.9);
+      h = hB * 4 * v * (1 - v);
+    } else {
+      const dUp = Math.min(UP, 0.45 * gap), dDown = Math.min(DOWN, 0.5 * gap);
+      const wind = hit2wind(B) * hB;
+      if (s < dUp) h = hB * easeOut(s / dUp);
+      else if (r > dDown) {
+        // esperando no alto: a armada cresce no fim da espera
+        const hold = (s - dUp) / Math.max(1e-6, gap - dUp - dDown);
+        h = hB + wind * smoothstep(0.55, 1, hold);
+      } else {
+        const k = 1 - r / dDown;
+        h = (hB + wind) * (1 - k * k);
+      }
+    }
     if (A.inst === B.inst) return setState(out, B.inst, B.inst, 1, h);
-    return setState(out, A.inst, B.inst, smoothstep(0.12, 0.7, s / gap), h);
+    const w = smoothstep(0.12, 0.7, u);
+    return setState(out, A.inst, B.inst, w, h, Math.sin(Math.PI * w));
   }
 
   if (A && (!B || t - A.t < (B.t - A.t) / 2)) {
     // Depois do último golpe por perto: rebote e volta pro descanso.
     const s = t - A.t;
     const h = REST_LIFT * easeOut(clamp01(s / UP));
-    return setState(out, A.inst, home, smoothstep(UP * 0.5, UP + SETTLE, s), h);
+    const w = smoothstep(UP * 0.5, UP + SETTLE, s);
+    return setState(out, A.inst, home, w, h, A.inst === home ? 0 : Math.sin(Math.PI * w));
   }
 
   if (B) {
-    // Saindo do descanso pro próximo golpe.
-    const r = B.t - t, hB = strokeHeight(B, APPROACH);
+    // Saindo do descanso pro próximo golpe, com a armada no fim.
+    const r = B.t - t, hB = strokeHeight(B, APPROACH), wind = hit2wind(B) * hB;
     if (r >= APPROACH) return setState(out, home, home, 1, REST_LIFT);
     if (r > DOWN) {
       const k = smooth(1 - (r - DOWN) / (APPROACH - DOWN));
-      return setState(out, home, B.inst, k, REST_LIFT + (hB - REST_LIFT) * k);
+      const h = REST_LIFT + (hB - REST_LIFT) * k + wind * smoothstep(0.6, 1, k);
+      return setState(out, home, B.inst, k, h, home === B.inst ? 0 : Math.sin(Math.PI * k));
     }
     const u = 1 - r / DOWN;
-    return setState(out, B.inst, B.inst, 1, hB * (1 - u * u));
+    return setState(out, B.inst, B.inst, 1, (hB + wind) * (1 - u * u));
   }
 
   return setState(out, home, home, 1, REST_LIFT);
+}
+
+/** Armada antes do golpe: só nos fortes (acento), nada na nota fantasma. */
+function hit2wind(hit) {
+  return hit.ghost ? 0 : WINDUP * smoothstep(0.55, 1, hit.vel);
 }
 
 const K_DOWN = 0.09;  // s: pé descendo
