@@ -1,34 +1,23 @@
-// Kit procedural: cilindros, discos e tubos, nada baixado. Cada peça tem um
-// "frame" no centro da superfície de golpe (y = normal da pele, z = lado do
-// baterista), usado pra posicionar a pele, os anéis e os pontos de contato.
+// Kit do estilo manequim: cilindros, discos e tubos de cromo, nada baixado.
+// Cada peça tem um "frame" no centro da superfície de golpe (pieces.js), usado
+// pra posicionar a pele e os anéis.
 
 import {
   CircleGeometry, Color, CylinderGeometry, DoubleSide, Group, LatheGeometry,
-  InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, BoxGeometry, Quaternion,
-  RingGeometry, TorusGeometry, Vector2, Vector3,
+  InstancedMesh, Matrix4, Mesh, MeshLambertMaterial, BoxGeometry, Quaternion,
+  TorusGeometry, Vector2, Vector3,
 } from "../vendor/three.module.min.js";
+import { CYMBALS, DRUMS, HIHAT_PEDAL, KICK, KICK_PEDAL, THRONE } from "./layout.js";
 import {
-  CONTACTS, CYMBALS, DRUMS, HIHAT_PEDAL, KICK, KICK_PEDAL, STRIKE_ANGLE, THRONE,
-} from "./layout.js";
-import { INSTANCE_PIECE, upperBound } from "./timeline.js";
+  beaterAngle, contact, cymbalProfile, pedalAngle, placeFrame, standRods, strikeAngle, surfaceY,
+} from "./pieces.js";
+import { INSTANCE_PIECE } from "./timeline.js";
 import { flash, footPress, wobble } from "./motion.js";
+import { createRings, updateRings } from "./rings.js";
 
 const UP = new Vector3(0, 1, 0);
-const RINGS_PER_PIECE = 4;
 // Balanço dos pratos: amplitude (rad), amortecimento (s), frequência (Hz).
 const WOBBLE = { crash: [0.11, 0.6, 2.1], ride: [0.045, 0.5, 2.6], hihat: [0.018, 0.12, 6] };
-
-// Perfil do prato, pares (raio, altura) em metros: cúpula + arco até a borda.
-function cymbalProfile(r) {
-  return [[0, 0.03], [0.032, 0.028], [0.05, 0.016], [0.07, 0.007], [r, -0.012]];
-}
-function profileHeight(profile, rho) {
-  for (let i = 1; i < profile.length; i++) {
-    const [r0, y0] = profile[i - 1], [r1, y1] = profile[i];
-    if (rho <= r1) return y0 + ((rho - r0) / (r1 - r0)) * (y1 - y0);
-  }
-  return profile[profile.length - 1][1];
-}
 
 export function createKit() {
   const group = new Group();
@@ -66,41 +55,17 @@ export function createKit() {
     if (parent !== group) { parent.updateMatrix(); tmpM.premultiply(parent.matrix); }
     rodMatrices.push(tmpM.clone());
   }
-  function tripod(parent, x, z, top, spread = 0.2, r = 0.008) {
-    rod(parent, [x, 0.2, z], [x, top, z], r);
-    for (let k = 0; k < 3; k++) {
-      const ang = Math.PI / 2 + (k * 2 * Math.PI) / 3;
-      rod(parent, [x, 0.22, z], [x + Math.cos(ang) * spread, 0.005, z - Math.sin(ang) * spread], r * 0.8);
-    }
-  }
-  function frameAt(spec) {
-    const f = new Group();
-    f.position.set(...spec.pos);
-    f.rotation.set(spec.tilt || 0, 0, spec.roll || 0);
+  function frameAt(id) {
+    const f = placeFrame(id, new Group());
     group.add(f);
     return f;
   }
 
   const inst = {};
-  function addRings(id, parent, r, y) {
-    const geo = keep(new RingGeometry(r * 0.93, r, 48, 1));
-    geo.rotateX(-Math.PI / 2);
-    const rings = [];
-    for (let k = 0; k < RINGS_PER_PIECE; k++) {
-      const mat = keep(new MeshBasicMaterial({ transparent: true, depthWrite: false, side: DoubleSide }));
-      const m = new Mesh(geo, mat);
-      m.position.y = y;
-      m.visible = false;
-      m.renderOrder = 2;
-      parent.add(m);
-      rings.push(m);
-    }
-    inst[id].rings = rings;
-  }
 
   // ---------- tambores ----------
   for (const [id, d] of Object.entries(DRUMS)) {
-    const frame = frameAt(d);
+    const frame = frameAt(id);
     const shellMat = keep(new MeshLambertMaterial());
     const headMat = keep(new MeshLambertMaterial());
     const shellGeo = keep(new CylinderGeometry(d.r, d.r, d.depth, 32, 1, true));
@@ -123,31 +88,13 @@ export function createKit() {
       hoop.position.y = y;
       frame.add(hoop);
     }
-    inst[id] = { id, kind: "drum", piece: INSTANCE_PIECE[id], frame, r: d.r, shellMat, headMat, surfaceY: () => 0 };
-    addRings(id, frame, d.r, 0.014);
-  }
-
-  // estantes e suportes dos tambores
-  const sn = DRUMS.snare.pos;
-  tripod(group, sn[0], sn[2], sn[1] - DRUMS.snare.depth - 0.01, 0.2);
-  const fl = DRUMS.floor;
-  for (let k = 0; k < 3; k++) {
-    const ang = -Math.PI / 6 + (k * 2 * Math.PI) / 3;
-    const x = fl.pos[0] + Math.cos(ang) * (fl.r + 0.03), z = fl.pos[2] - Math.sin(ang) * (fl.r + 0.03);
-    rod(group, [x, fl.pos[1] - 0.06, z], [x + Math.cos(ang) * 0.05, 0.005, z - Math.sin(ang) * 0.05], 0.007);
-  }
-  const holderTop = [0.12, 0.72, -0.66];
-  rod(group, [0.12, 0.55, -0.66], holderTop, 0.011);
-  for (const id of ["tom1", "tom2"]) {
-    const f = inst[id].frame;
-    f.updateMatrix();
-    const p = new Vector3(0, -DRUMS[id].depth * 0.55, 0).applyMatrix4(f.matrix);
-    rod(group, holderTop, [p.x, p.y, p.z], 0.009);
+    inst[id] = { id, kind: "drum", piece: INSTANCE_PIECE[id], frame, r: d.r, shellMat, headMat };
+    inst[id].rings = createRings(frame, d.r, 0.014, keep);
   }
 
   // ---------- pratos ----------
   for (const [id, c] of Object.entries(CYMBALS)) {
-    const frame = frameAt(c);
+    const frame = frameAt(id);
     const pivot = new Group();
     frame.add(pivot);
     const profile = cymbalProfile(c.r);
@@ -160,26 +107,17 @@ export function createKit() {
       bottom.rotation.x = Math.PI;
       bottom.position.y = -0.03;
       pivot.add(bottom);
-      rod(frame, [0, 0.03, 0], [0, 0.12, 0], 0.004);
     }
-    // haste da estante, na vertical, até logo abaixo da cúpula
-    frame.updateMatrix();
-    const under = new Vector3(0, -0.035, 0).applyMatrix4(frame.matrix);
-    tripod(group, under.x, under.z, under.y, id === "hihat" ? 0.2 : 0.24);
-    inst[id] = {
-      id, kind: "cymbal", piece: INSTANCE_PIECE[id], frame, pivot, r: c.r, shellMat: mat, headMat: null,
-      surfaceY: (rho) => profileHeight(profile, rho),
-    };
-    addRings(id, frame, c.r, 0.004);
+    inst[id] = { id, kind: "cymbal", piece: INSTANCE_PIECE[id], frame, pivot, r: c.r, shellMat: mat, headMat: null };
+    inst[id].rings = createRings(frame, c.r, 0.004, keep);
   }
-  rod(inst.hihat.frame, [0, -0.03, 0], [0, -0.035, 0], 0.004);
+
+  // ---------- estantes ----------
+  for (const s of standRods()) rod(s.frame ? inst[s.frame].frame : group, s.a, s.b, s.r);
 
   // ---------- bumbo ----------
   {
-    const frame = new Group();
-    frame.position.set(...KICK.pos);
-    frame.rotation.x = Math.PI / 2; // y local = pro baterista
-    group.add(frame);
+    const frame = frameAt("kick"); // y local = pro baterista
     const shellMat = keep(new MeshLambertMaterial());
     const headMat = keep(new MeshLambertMaterial());
     const shellGeo = keep(new CylinderGeometry(KICK.r, KICK.r, KICK.depth, 36, 1, true));
@@ -207,11 +145,8 @@ export function createKit() {
       hoop.position.y = y;
       frame.add(hoop);
     }
-    const [kx, ky, kz] = KICK.pos, zMid = kz - KICK.depth * 0.75;
-    rod(group, [kx - KICK.r * 0.8, ky - 0.05, zMid], [kx - KICK.r - 0.12, 0.005, zMid + 0.06], 0.008);
-    rod(group, [kx + KICK.r * 0.8, ky - 0.05, zMid], [kx + KICK.r + 0.12, 0.005, zMid + 0.06], 0.008);
-    inst.kick = { id: "kick", kind: "kick", piece: "kick", frame, r: KICK.r, shellMat, headMat, surfaceY: () => 0 };
-    addRings("kick", frame, KICK.r, 0.03);
+    inst.kick = { id: "kick", kind: "kick", piece: "kick", frame, r: KICK.r, shellMat, headMat };
+    inst.kick.rings = createRings(frame, KICK.r, 0.03, keep);
   }
 
   // ---------- pedal do bumbo ----------
@@ -225,11 +160,6 @@ export function createKit() {
   const plate = new Mesh(keep(new BoxGeometry(0.11, 0.008, 0.36)), chrome);
   plate.position.set(P.hinge[0], 0.004, P.hinge[2] - 0.17);
   group.add(plate);
-  for (const dx of [-0.055, 0.055]) {
-    rod(group, [P.beaterPivot[0] + dx, 0.008, P.beaterPivot[2]], [P.beaterPivot[0] + dx, P.beaterPivot[1], P.beaterPivot[2]], 0.006);
-  }
-  rod(group, [P.beaterPivot[0] - 0.055, P.beaterPivot[1], P.beaterPivot[2]],
-    [P.beaterPivot[0] + 0.055, P.beaterPivot[1], P.beaterPivot[2]], 0.005);
   const beater = new Group();
   beater.position.set(...P.beaterPivot);
   group.add(beater);
@@ -238,8 +168,6 @@ export function createKit() {
   felt.rotation.z = Math.PI / 2;
   felt.position.y = P.beaterLen;
   beater.add(felt);
-  // ângulo do batedor encostado na pele
-  const beaterContact = Math.asin((KICK.pos[2] + P.feltR - P.beaterPivot[2]) / P.beaterLen);
 
   // ---------- pedal do chimbal ----------
   const H = HIHAT_PEDAL;
@@ -249,14 +177,11 @@ export function createKit() {
   hhBoard.position.set(...H.hinge);
   hhBoard.rotation.x = H.angle;
   group.add(hhBoard);
-  const hh = CYMBALS.hihat.pos;
-  rod(group, [H.hinge[0], 0.008, H.hinge[2] - H.length], [hh[0], 0.03, hh[2]], 0.006);
 
   // ---------- banco e tapete ----------
   const seatMesh = new Mesh(keep(new CylinderGeometry(THRONE.r, THRONE.r * 0.95, 0.08, 24)), seat);
   seatMesh.position.set(THRONE.pos[0], THRONE.pos[1] - 0.04, THRONE.pos[2]);
   group.add(seatMesh);
-  tripod(group, THRONE.pos[0], THRONE.pos[2], THRONE.pos[1] - 0.08, 0.22, 0.012);
   const rugGeo = keep(new CircleGeometry(1.45, 48));
   rugGeo.rotateX(-Math.PI / 2);
   const rug = new Mesh(rugGeo, floorMat);
@@ -295,22 +220,8 @@ export function createKit() {
     }
   }
 
-  // ---------- contato ----------
-  /** Ponto de contato e normal da superfície (mundo) pra mão `limb` na peça `id`. */
-  function contact(id, limb, outP, outN) {
-    const it = inst[id], [x, z] = CONTACTS[id][limb];
-    outP.set(x, it.surfaceY(Math.hypot(x, z)), z);
-    it.frame.localToWorld(outP);
-    it.frame.getWorldQuaternion(tmpQ);
-    outN.copy(UP).applyQuaternion(tmpQ);
-    return it;
-  }
-  const strikeAngle = (id) => (inst[id].kind === "cymbal" ? STRIKE_ANGLE.cymbal : STRIKE_ANGLE.drum);
-
   // ---------- animação ----------
-  function pedalAngle(p) { return P.restAngle + (P.pressAngle - P.restAngle) * p; }
-
-  /** Atualiza reações no tempo t. */
+  /** Atualiza reações no tempo t; devolve quanto o pedal do bumbo está pisado. */
   function update(t, prep, anticipation) {
     for (const it of Object.values(inst)) {
       const hits = prep.instHits[it.id] || [];
@@ -327,24 +238,11 @@ export function createKit() {
         const [amp, tau, freq] = WOBBLE[it.id];
         it.pivot.rotation.x = wobble(hits, t, amp, tau, freq);
       }
-      // anel de antecipação: encolhe até o tamanho da peça no instante do golpe
-      let shown = 0;
-      if (anticipation && !isMuted) {
-        const len = prep.clock.beatLen(t);
-        for (let j = upperBound(hits, t); j < hits.length && shown < RINGS_PER_PIECE; j++) {
-          const dt = hits[j].t - t;
-          if (dt > len) break;
-          const ring = it.rings[shown++], u = dt / len;
-          ring.visible = true;
-          ring.scale.setScalar(1 + 1.4 * u);
-          ring.material.opacity = 0.9 * (1 - u) + 0.08;
-        }
-      }
-      for (let k = shown; k < it.rings.length; k++) it.rings[k].visible = false;
+      updateRings(it.rings, hits, t, prep.clock, anticipation && !isMuted);
     }
     const p = footPress(prep.limbs.PD, t);
     kickBoard.rotation.x = pedalAngle(p);
-    beater.rotation.x = beaterContact + (1 - p) * P.beaterBack;
+    beater.rotation.x = beaterAngle(p);
     return p;
   }
 
@@ -358,7 +256,7 @@ export function createKit() {
   }
 
   return {
-    group, inst, contact, strikeAngle, update, paint, setMuted, pedalAngle, beaterGap,
+    group, inst, contact, strikeAngle, surfaceY, update, paint, setMuted, pedalAngle, beaterGap,
     dispose() { for (const d of disposables) d.dispose(); },
   };
 }

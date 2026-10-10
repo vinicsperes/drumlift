@@ -8,15 +8,12 @@
 // O módulo não toca áudio e não é dono do relógio: chama getTime() a cada quadro
 // e calcula a pose inteira a partir desse tempo.
 
-import {
-  Color, DirectionalLight, HemisphereLight, PerspectiveCamera, Scene, Vector3, WebGLRenderer,
-} from "../vendor/three.module.min.js";
+import { PerspectiveCamera, Scene, Vector3, WebGLRenderer } from "../vendor/three.module.min.js";
 import { OrbitControls } from "../vendor/OrbitControls.js";
 import { prepareSong } from "./timeline.js";
-import { createKit } from "./kit.js";
-import { createAvatar } from "./avatar.js";
+import { createManequim } from "./manequim.js";
 import { CAMERA_NAMES, cameraPose } from "./cameras.js";
-import { LIMB_NAMES, themeFor } from "./theme.js";
+import { LIMB_NAMES } from "./theme.js";
 
 const FOV = 42;
 const CAMERA_TWEEN = 0.6; // s
@@ -52,14 +49,8 @@ export function mountKit3D(container, opts = {}) {
 
   const scene = new Scene();
   const camera = new PerspectiveCamera(FOV, 1, 0.05, 30);
-  const hemi = new HemisphereLight();
-  const sun = new DirectionalLight();
-  sun.position.set(1.2, 3.4, 2.0);
-  scene.add(hemi, sun);
-
-  const kit = createKit();
-  const avatar = createAvatar(kit);
-  scene.add(kit.group, avatar.group);
+  const style = createManequim({ renderer, scene });
+  scene.add(style.group);
 
   const controls = new OrbitControls(camera, canvas);
   controls.enableDamping = true;
@@ -101,19 +92,12 @@ export function mountKit3D(container, opts = {}) {
   // ---------- tema ----------
   const mq = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
   function applyTheme() {
-    const th = themeFor(mq ? mq.matches : true);
-    scene.background = new Color(th.bg);
-    hemi.color.set(th.hemiSky);
-    hemi.groundColor.set(th.hemiGround);
-    hemi.intensity = th.hemi;
-    sun.intensity = th.sun;
-    kit.paint(th);
-    avatar.paint(th);
+    const th = style.paint(mq ? mq.matches : true);
     for (const [limb, { chip, dot }] of Object.entries(chips)) {
       dot.style.background = th.limb[limb];
       chip.style.color = th.text;
       chip.style.borderColor = th.line;
-      chip.style.background = th.dark ? "rgba(22,26,34,.78)" : "rgba(255,255,255,.82)";
+      chip.style.background = th.chip;
     }
     dirty = true;
   }
@@ -176,10 +160,7 @@ export function mountKit3D(container, opts = {}) {
     try { t = Number(getTime()); } catch { t = NaN; }
     return Number.isFinite(t) ? t : 0;
   }
-  function pose(t) {
-    const press = kit.update(t, prep, anticipation);
-    avatar.update(t, prep, press);
-  }
+  function pose(t) { style.update(t, prep, anticipation); }
   function frame() {
     raf = requestAnimationFrame(frame);
     if (!width || !height) return;
@@ -203,7 +184,7 @@ export function mountKit3D(container, opts = {}) {
       userMoved = false;
       placeCamera(name, true);
     },
-    setMuted(pieces) { kit.setMuted(pieces); dirty = true; },
+    setMuted(pieces) { style.setMuted(pieces); dirty = true; },
     setAnticipation(on) { anticipation = !!on; dirty = true; },
     get camera() { return camName; },
     dispose() {
@@ -215,8 +196,7 @@ export function mountKit3D(container, opts = {}) {
       controls.removeEventListener("start", onStart);
       controls.removeEventListener("change", onChange);
       controls.dispose();
-      kit.dispose();
-      avatar.dispose();
+      style.dispose();
       renderer.dispose();
       renderer.forceContextLoss();
       root.remove();
@@ -224,7 +204,7 @@ export function mountKit3D(container, opts = {}) {
     // Ganchos pra testes; não fazem parte do contrato.
     _debug: {
       get prep() { return prep; },
-      kit, avatar, renderer, camera, controls,
+      kit: style.kit, avatar: style.avatar, rig: style.rig, renderer, camera, controls, scene,
       /** Calcula a pose no tempo t (sem desenhar). O próximo quadro volta pro getTime(). */
       pose(t) { pose(t); dirty = true; },
       /**
@@ -234,18 +214,18 @@ export function mountKit3D(container, opts = {}) {
       tip(limb, inst, t) {
         pose(t);
         dirty = true;
-        const c = avatar.configs[limb][inst];
-        const tip = avatar.tipWorld(limb);
+        const c = style.rig.configs[limb][inst];
+        const tip = style.tipWorld(limb);
         const off = tip.distanceTo(c.tip);
-        return { gap: tip.sub(c.P).dot(c.n) - avatar.TIP_R, off };
+        return { gap: tip.sub(c.P).dot(c.n) - style.rig.TIP_R, off };
       },
       /** Distância (m) do batedor até a pele do bumbo, no tempo t. */
-      beaterGap(t) { pose(t); dirty = true; return kit.beaterGap(); },
+      beaterGap(t) { pose(t); dirty = true; return style.beaterGap(); },
       /** IK alcançou os alvos no tempo t? */
       reached(t) {
         pose(t);
         dirty = true;
-        const { arms, legs } = avatar;
+        const { arms, legs } = style.rig;
         return { MD: arms.MD.reached, ME: arms.ME.reached, PD: legs.PD.reached, PE: legs.PE.reached };
       },
       info() { return { ...renderer.info.render }; },
