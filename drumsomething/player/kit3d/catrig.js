@@ -26,10 +26,15 @@ export const B = Object.fromEntries(BONE_NAMES.map((n, i) => [n, i]));
 export const NECK = v3(0, 0.585, -0.03);  // pivô da cabeça
 export const HEAD_TILT = -0.11;           // olhando pra caixa
 export const BELLY_C = v3(0, 0.15, -0.09);
-// No espaço da cabeça (origem no pescoço, já inclinada):
-export const SKULL = { c: v3(0, 0.113, 0), r: v3(0.139, 0.119, 0.125) };
-export const EYE_C = v3(0, 0.14, -0.11); // centro dos olhos (pivô da piscada)
-export const EAR = { dir: [0.58, 0.8, 0.12], len: 0.098, r1: 0.048, r2: 0.0145, flat: 0.7, out: 0.22 };
+// No espaço da cabeça (origem no pescoço, já inclinada). A cabeça é um pouco
+// maior que a de gente, como num bicho de pelúcia; o esqueleto não muda.
+export const HEAD_SCALE = 1.14;
+const hs = (x, y, z) => v3(x, y, z).multiplyScalar(HEAD_SCALE);
+export const SKULL = { c: hs(0, 0.113, 0), r: hs(0.139, 0.119, 0.125) };
+export const EYE_C = hs(0, 0.14, -0.11); // centro dos olhos (pivô da piscada)
+export const EAR = {
+  dir: [0.58, 0.8, 0.12], len: 0.098 * HEAD_SCALE, r1: 0.048 * HEAD_SCALE, r2: 0.0145 * HEAD_SCALE, flat: 0.7, out: 0.22,
+};
 // Rabo: curva na pose de ligação (mundo), saindo de dentro do quadril.
 export const TAIL_CURVE = [
   v3(0, 0.62, 0.35), v3(0, 0.61, 0.47), v3(0, 0.53, 0.56), v3(0, 0.41, 0.615),

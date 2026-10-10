@@ -9,7 +9,7 @@ import {
 } from "../vendor/three.module.min.js";
 import { BODY } from "./layout.js";
 import { FEET, HANDS } from "./rig.js";
-import { B, EARS, EYE_C } from "./catrig.js";
+import { B, EARS, EYE_C, HEAD_SCALE as HS, SKULL } from "./catrig.js";
 import { catBody, projectToBody, rayToBody } from "./catbody.js";
 import { basis, ellipsoid as shapeEllipsoid, mergeSkinned, thread as shapeThread } from "./shapes.js";
 
@@ -56,9 +56,9 @@ export function buildDetails(body) {
 
   // ---------- olhos de botão (osso dos olhos, que pisca) ----------
   for (const s of [1, -1]) {
-    const P = onFace(0.052 * s, EYE_C.y, -0.2);
+    const P = onFace(0.052 * HS * s, EYE_C.y, -0.2);
     const n = N.clone();
-    const m = basis(P.clone().addScaledVector(n, 0.0042), n, headUp);
+    const m = basis(P.clone().addScaledVector(n, 0.0042 * HS), n, headUp).multiply(new Matrix4().makeScale(HS, HS, HS));
     const btn = ellipsoid(0.02, 0.02, 0.0085, 20, 14).applyMatrix4(m);
     parts.push({ geo: btn, slot: S.eye, bone: B.olhos });
     const rim = new TorusGeometry(0.0175, 0.0026, 6, 24).applyMatrix4(m.clone().multiply(new Matrix4().makeTranslation(0, 0, -0.004)));
@@ -69,15 +69,15 @@ export function buildDetails(body) {
   }
 
   // ---------- nariz, boca e bigodes (cabeça) ----------
-  const puff = (s) => H(0.031 * s, 0.064, -0.12); // centro das almofadas do focinho
-  const noseP = onFace(0, 0.093, -0.2);
+  const puff = (s) => H(0.031 * HS * s, 0.064 * HS, -0.12 * HS); // centro das almofadas do focinho
+  const noseP = onFace(0, 0.093 * HS, -0.2);
   const noseN = N.clone();
   {
     const g = new SphereGeometry(1, 18, 12);
     const p = g.attributes.position;
     for (let i = 0; i < p.count; i++) {
       const y01 = (p.getY(i) + 1) / 2;
-      p.setXYZ(i, p.getX(i) * 0.018 * (0.4 + 0.6 * y01), p.getY(i) * 0.0118, p.getZ(i) * 0.0105);
+      p.setXYZ(i, p.getX(i) * 0.018 * HS * (0.4 + 0.6 * y01), p.getY(i) * 0.0118 * HS, p.getZ(i) * 0.0105 * HS);
     }
     g.computeVertexNormals();
     g.applyMatrix4(basis(noseP.clone().addScaledVector(noseN, 0.002), noseN, headUp));
@@ -86,7 +86,7 @@ export function buildDetails(body) {
   {
     const lift = (q) => { const n = new Vector3(); const r = onBody(q, n); return r.addScaledVector(n, 0.0007); };
     const top = lift(noseP.clone().addScaledVector(headUp, -0.011));
-    const valley = (() => { const n = new Vector3(); return onFace(0, 0.052, -0.2, n).addScaledVector(n, 0.0007); })();
+    const valley = (() => { const n = new Vector3(); return onFace(0, 0.052 * HS, -0.2, n).addScaledVector(n, 0.0007); })();
     parts.push({ geo: thread([top, top.clone().lerp(valley, 0.5), valley], 0.0012), slot: S.thread, bone: B.cabeca });
     for (const s of [1, -1]) {
       const c = puff(s), pts = [valley];
@@ -114,7 +114,7 @@ export function buildDetails(body) {
     for (let k = 0; k <= 24; k++) {
       const a = 0.85 + (k / 24) * 1.85;
       const n = new Vector3();
-      const p = onBody(H(0, 0.113 + Math.sin(a) * 0.2, -Math.cos(a) * 0.2), n);
+      const p = onBody(H(0, SKULL.c.y + Math.sin(a) * 0.25, -Math.cos(a) * 0.25), n);
       pts.push([p, n.clone()]);
     }
     headStitches.push(pts);
@@ -125,8 +125,8 @@ export function buildDetails(body) {
     const m = head.clone().multiply(new Matrix4().makeRotationFromQuaternion(e.q).setPosition(e.base));
     const nu = 6, nvv = 9, pos = [], nor = [], idx = [];
     for (let j = 0; j <= nvv; j++) {
-      const y = 0.016 + (j / nvv) * 0.062;
-      const w = 0.029 * Math.pow(1 - (y - 0.016) / 0.075, 0.9) + 0.002;
+      const y = (0.016 + (j / nvv) * 0.062) * HS;
+      const w = 0.029 * HS * Math.pow(1 - (y / HS - 0.016) / 0.075, 0.9) + 0.002;
       for (let i = 0; i <= nu; i++) {
         const x = (i / nu - 0.5) * 2 * w;
         const n = new Vector3();
@@ -298,7 +298,7 @@ export function catMeshData() {
   return {
     body: {
       positions: body.positions, normals: body.normals, index: body.index,
-      skinIndex: body.skinIndex, skinWeight: body.skinWeight, fur: body.fur,
+      skinIndex: body.skinIndex, skinWeight: body.skinWeight, fur: body.fur, ao: body.ao,
     },
     details,
     stats: { ...body.stats, bodyMs: t1 - t0, detailsMs: performance.now() - t1 },
