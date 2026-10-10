@@ -56,35 +56,36 @@ Também aceita um link no lugar do arquivo, se o `yt-dlp` estiver instalado (`uv
 
 ## O player
 
-Ele mostra a tab rolando junto com a música, com a coluna atual destacada.
+A tela toda é o palco: um gato de pelúcia toca a tab em sincronia com a música
+(ou um manequim, em **Ajustes → Visual**). Embaixo, a **faixa de notas** mostra as
+próximas notas chegando na linha do "agora", uma linha por peça, com a mão que toca
+cada nota: **D** (direita) ou **E** (esquerda), a mesma conta que o gato usa.
 
 **Pra validar a tab:**
-- O padrão é **banda sem bateria + tab tocando**. Se soar igual à música, a tab está certa.
-- **A/B** (tecla `A`) alterna entre a bateria original e a tab, mantendo a banda. É o jeito mais rápido de achar diferença.
-- Clique no nome de uma peça (`HH`, `SD`…) pra silenciar ela na tab, ou `Shift`+clique pra ouvir só ela.
-  Pra conferir só o chimbal, por exemplo, deixe "Bateria isolada" ligada e sole o `HH`.
-- Kit `bipes` toca cada peça num tom diferente, assim dá pra ouvir as linhas separadas.
+- **Tab / Original** (tecla `A`) alterna entre a banda com a tab tocando e a banda com a
+  bateria de verdade. Se as duas soarem iguais, a tab está certa.
+- Clique no nome de uma peça na faixa (`HH`, `SD`…) pra silenciar ela; `Shift`+clique pra
+  ouvir só ela. Vale pro som e pro gato.
+- Kit **Bipes** (em Ajustes → Som) toca cada peça num tom diferente, pra ouvir as linhas separadas.
 - Nota apagada = o modelo teve pouca confiança nela. Comece conferindo essas.
 
 **Pra estudar:**
-- Clique no número do compasso pra pular pra ele, `Shift`+clique em outro pra fazer **loop** do trecho.
-- **Velocidade** de 50% a 100%. O som fica mais grave quando você desacelera.
-- **Metrônomo** marca as batidas detectadas (o primeiro tempo do compasso é mais agudo).
+- Arraste na faixa de notas pra marcar um **loop** (`L` liga e desliga); clique pra pular.
+- **Velocidade** de 50% a 100% (`[` e `]`). O som fica mais grave quando você desacelera,
+  e o gato desacelera junto.
+- **Metrônomo** marca as batidas detectadas (o primeiro tempo é mais agudo).
+- Câmeras `1` frente, `2` baterista (por cima do ombro), `3` lado (os pés) e `4` cima;
+  arraste no palco pra girar. **Antecipação** desenha um anel que fecha na peça na hora do golpe.
+- As mãos são deduzidas por regras de baterista destro (chimbal na direita cruzando a
+  esquerda na caixa, viradas alternando D-E), então podem não ser as que o baterista
+  original usou.
 
-**Pra ver quem toca o quê:** **Bateria 3D** (`B`) abre um gato de pelúcia tocando a tab
-(ou um manequim, no botão **Manequim**),
-sincronizado com o player (loop e velocidade valem pra ele também). Mostra qual
-membro bate em cada peça: mão direita (MD), mão esquerda (ME), pé direito (PD), pé
-esquerdo (PE). Câmeras `1` baterista, `2` frente, `3` lado (pés) e `4` cima; arraste
-pra girar. **Antecipação** desenha um anel que fecha na peça na hora do golpe. As mãos
-são deduzidas por regras de baterista destro (chimbal na direita cruzando a esquerda na
-caixa, viradas alternando D-E), então podem não ser as que o baterista original usou.
+**Pra corrigir:** **Tab completa** (`T`) abre a grade de todos os compassos. Lá, **Editar**
+(`E`) e clique nas casas pra pôr ou tirar notas (`Alt`+clique na caixa = nota fantasma);
+`Ctrl+Z` desfaz e **Salvar** (`Ctrl+S`) regrava `tab.txt`, `drums.mid` e os áudios.
 
-**Pra corrigir:** ligue **Editar** (`E`), clique nas casas pra pôr ou tirar notas
-(`Alt`+clique na caixa = nota fantasma), `Ctrl+Z` desfaz e **Salvar** (`Ctrl+S`) regrava
-`tab.txt`, `drums.mid` e os áudios.
-
-Atalhos: `espaço` tocar/pausar · `←` `→` compasso · `L` loop · `M` metrônomo · `B` bateria 3D · `F` seguir a tab.
+Atalhos: `espaço` tocar/pausar · `←` `→` compasso · `A` tab/original · `L` loop ·
+`M` metrônomo · `[` `]` velocidade · `1`–`4` câmeras · `T` tab completa · `Esc` fecha.
 
 ## Arquivos gerados
 
@@ -120,7 +121,7 @@ uv run python tests/score.py out/teste songs/teste.truth.json
 
 Resultados atuais (F1): andamento fixo 0.99, acelerando de 96 a 116 BPM 0.98, shuffle em tercina 0.98.
 
-A bateria 3D tem uma página própria pra desenvolvimento, sem áudio: sirva a raiz do
+O palco 3D tem uma página própria pra desenvolvimento, sem áudio: sirva a raiz do
 repositório (`python -m http.server`) e abra `/drumsomething/player/kit3d-dev.html`.
 Detalhes em [`docs/kit3d.md`](docs/kit3d.md).
 
@@ -128,3 +129,4 @@ Detalhes em [`docs/kit3d.md`](docs/kit3d.md).
 
 - Modelo ADTOF: CC BY-NC-SA 4.0, **só uso não comercial** ([ADTOF](https://github.com/MZehren/ADTOF), [ADTOF-pytorch](https://github.com/xavriley/ADTOF-pytorch)).
 - Demucs: MIT. beat_this: MIT. Three.js: MIT.
+- Fonte Instrument Serif: SIL Open Font License 1.1 (`drumsomething/player/vendor/fonts/OFL.txt`).
