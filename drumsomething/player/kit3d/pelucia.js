@@ -26,7 +26,7 @@ const LIGHT = {
   head: "#f5eddf", gold: "#ead48e", rope: "#cbb595", pad: "#7a675a", seat: "#6f8794",
   stick: "#e3c18e", thread: "#3a2a21",
   shadow: "#4b3627", shadowSoft: 0.2, shadowHard: 0.34,
-  hemiSky: "#fffaf3", hemiGround: "#cdbba5", hemi: 0.85, key: "#fff2e2", keyI: 2.5, env: 0.5, exposure: 1.0,
+  hemiSky: "#fffaf3", hemiGround: "#ddcdb8", hemi: 0.85, key: "#fff2e2", keyI: 2.5, env: 0.5, exposure: 1.0,
 };
 const DARK = {
   bg: "#1b1916", text: "#ece6dc", line: "#3a342c", chip: "rgba(38,33,28,.84)",
