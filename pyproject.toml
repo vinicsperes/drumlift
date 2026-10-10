@@ -1,0 +1,43 @@
+[project]
+name = "drumsomething"
+version = "0.1.0"
+description = "Isola a bateria de uma música, gera tablatura e toca a tab de volta para validar de ouvido."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "demucs>=4.1",
+    "adtof-pytorch",
+    "beat-this>=1.1",
+    "torch>=2.11",
+    "torchaudio>=2.11",
+    "librosa>=0.11",
+    "soundfile",
+    "numpy",
+    "pretty_midi",
+]
+
+[project.scripts]
+drumsomething = "drumsomething.cli:main"
+
+[tool.uv]
+environments = ["sys_platform == 'linux'"]
+
+[tool.uv.sources]
+adtof-pytorch = { git = "https://github.com/xavriley/ADTOF-pytorch", rev = "85c192e" }
+torch = { index = "pytorch-cpu" }
+torchaudio = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["drumsomething*"]
+
+[tool.setuptools.package-data]
+drumsomething = ["player/*"]
