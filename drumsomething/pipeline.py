@@ -86,7 +86,8 @@ def build(outdir: Path, title: str, *, subdiv: int | None = None, sensitivity: f
     meta = {"title": title, "duration": duration, "source": source, "sensitivity": sensitivity,
             "kits": kits.write_kits(outdir / "kits", custom_kit)}
     save(outdir, grid, notes, meta)
-    shutil.copy(files("drumsomething") / "player" / "index.html", outdir / "index.html")
+    shutil.copytree(Path(str(files("drumsomething") / "player")), outdir, dirs_exist_ok=True,
+                    ignore=shutil.ignore_patterns("kit3d-dev.html"))
 
     counts = {BY_KEY[k].name: sum(n["piece"] == k for n in notes) for k in ORDER}
     bpm, lo, hi = grid.tempo()
