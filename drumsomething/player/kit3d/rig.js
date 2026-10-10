@@ -13,6 +13,16 @@ import { handState } from "./motion.js";
 import { solveTwoBone } from "./ik.js";
 
 const UP = new Vector3(0, 1, 0);
+const X_AXIS = new Vector3(1, 0, 0);
+// Chicote (método Moeller): o cotovelo e o ombro sobem um instante antes da
+// baqueta. Só mexe na cadeia do braço, não no pulso: a ponta continua exata.
+const WHIP_LEAD = 0.04;   // s de adiantamento do cotovelo
+const WHIP_ELBOW = 0.55;  // quanto o cotovelo sobe com a baqueta toda levantada
+const WHIP_SHOULDER = 0.014; // m que o ombro sobe
+// Trocando de peça, a mão passa por cima dos aros: levanta mais quanto mais longe.
+const TRAVEL_ARC = 0.85;  // altura extra (fração de h) por metro de distância
+// Pé esquerdo: o calcanhar marca o pulso com a ponta parada no pedal do chimbal.
+const HEEL_LIFT = 0.16;   // rad no meio do tempo
 export const HANDS = ["MD", "ME"];
 export const FEET = ["PD", "PE"];
 const HAND_TARGETS = ["snare", "hihat", "tom1", "tom2", "floor", "crash", "ride"];
@@ -47,7 +57,7 @@ export function createRig() {
     const foot = new Object3D(); // no eixo do pedal; rotation.x = ângulo do pé
     foot.position.set(...pedal.hinge);
     legs[limb] = {
-      foot,
+      foot, rest: foot.position.clone(),
       hip: new Vector3(BODY.hip[0] * side, BODY.hip[1], BODY.hip[2]).add(pelvis),
       pole: new Vector3(0.3 * side, 0.6, -1).normalize(),
       knee: new Vector3(), ankle: new Vector3(), reached: true,
@@ -79,7 +89,28 @@ export function createRig() {
   // ---------- pose ----------
   const tmpV = new Vector3(), tmpK = new Vector3(), tmpH = new Vector3();
   const tmpQ = new Quaternion(), pole = new Vector3();
+  const lead = { a: "snare", b: "snare", w: 1, h: 0, travel: 0 };
   const reach = (limb, id) => TORSO_REACH[limb][id] || TORSO_REACH[limb].snare;
+  const toe = new Vector3(0, 0, -HIHAT_PEDAL.length);
+
+  /** Calcanhar esquerdo (0..1): sobe no meio de cada tempo e desce na batida, só com a música tocando. */
+  function heelPulse(prep, t) {
+    const len = prep.clock.beatLen(t);
+    let active = 0;
+    for (const l of ["MD", "ME", "PD"]) {
+      const hits = prep.limbs[l];
+      if (!hits.length) continue;
+      // golpe nos últimos/próximos 2 tempos?
+      let lo = 0, hi = hits.length;
+      while (lo < hi) { const m = (lo + hi) >> 1; if (hits[m].t < t) lo = m + 1; else hi = m; }
+      const prev = hits[lo - 1], next = hits[lo];
+      const d = Math.min(prev ? t - prev.t : Infinity, next ? next.t - t : Infinity);
+      active = Math.max(active, 1 - Math.min(1, Math.max(0, (d - len) / len)));
+    }
+    if (active <= 0) return 0;
+    const ph = prep.clock.beatAt(t) % 1;
+    return active * Math.pow(Math.sin(Math.PI * (ph < 0 ? ph + 1 : ph)), 2);
+  }
 
   /** Calcula o esqueleto inteiro no tempo t. `press` = pedal do bumbo (0..1). */
   function update(t, prep, press) {
@@ -109,25 +140,39 @@ export function createRig() {
       // pose base entre duas configurações de golpe
       tmpH.lerpVectors(ca.H0, cb.H0, s.w);
       d.lerpVectors(ca.d0, cb.d0, s.w).normalize();
-      // levantar: pulso sobe e recua, baqueta gira pra cima em volta do pulso
-      if (s.h > 0) {
+      // levantar: pulso sobe e recua, baqueta gira pra cima em volta do pulso;
+      // trocando de peça, levanta mais no meio do caminho (por cima dos aros)
+      const h = s.h + TRAVEL_ARC * s.travel * ca.H0.distanceTo(cb.H0);
+      if (h > 0) {
         tmpV.set(d.x, 0, d.z).normalize();
-        tmpH.addScaledVector(UP, BODY.liftUp * s.h).addScaledVector(tmpV, -BODY.liftBack * s.h);
+        tmpH.addScaledVector(UP, BODY.liftUp * h).addScaledVector(tmpV, -BODY.liftBack * h);
         tmpK.crossVectors(d, UP).normalize();
-        d.applyAxisAngle(tmpK, BODY.liftAngle * s.h);
+        d.applyAxisAngle(tmpK, BODY.liftAngle * h);
       }
+      // chicote: o braço "puxa" a baqueta, adiantado no tempo
+      handState(limbs[limb], BODY.home[limb], t + WHIP_LEAD, lead);
+      const hLead = Math.min(1.2, lead.h + TRAVEL_ARC * lead.travel * 0.3);
       arm.shoulder.copy(shoulderLocal[limb]);
       torso.localToWorld(arm.shoulder);
+      arm.shoulder.y += WHIP_SHOULDER * hLead;
       // alvo longe: o ombro avança um pouco na direção dele
       tmpV.subVectors(tmpH, arm.shoulder);
       const excess = tmpV.length() - (BODY.upperArm + BODY.foreArm - 0.005);
       if (excess > 0) arm.shoulder.addScaledVector(tmpV.normalize(), Math.min(excess, SHOULDER_REACH));
-      pole.copy(elbowPoleLocal[limb]).applyQuaternion(tmpQ);
+      pole.copy(elbowPoleLocal[limb]).applyQuaternion(tmpQ).addScaledVector(UP, WHIP_ELBOW * hLead).normalize();
       arm.reached = solveTwoBone(arm.shoulder, tmpH, BODY.upperArm, BODY.foreArm, pole, arm.elbow, arm.wrist);
     }
 
     // pé direito: calcanhar parado no pedal, ponta desce junto com ele
     legs.PD.foot.rotation.x = pedalAngle(press);
+    // pé esquerdo: gira em volta da ponta (parada no pedal), o calcanhar sobe e desce
+    {
+      const f = legs.PE.foot, lift = HEEL_LIFT * heelPulse(prep, t);
+      tmpV.copy(toe).applyAxisAngle(X_AXIS, HIHAT_PEDAL.angle).add(legs.PE.rest); // ponta, parada
+      f.rotation.x = HIHAT_PEDAL.angle - lift;
+      tmpK.copy(toe).applyAxisAngle(X_AXIS, f.rotation.x);
+      f.position.copy(tmpV).sub(tmpK);
+    }
     for (const limb of FEET) {
       const leg = legs[limb];
       leg.foot.updateMatrixWorld(true);
