@@ -61,7 +61,17 @@
   .legend { display: flex; gap: 12px; flex-wrap: wrap; padding: 10px 16px 0; color: var(--muted); font-size: 12px; }
   .legend span b { font-family: ui-monospace, "JetBrains Mono", Menlo, monospace; margin-right: 4px; }
 
-  main#tab { padding: 10px 16px 40px; }
+  #workspace { display: flex; align-items: flex-start; }
+  main#tab { padding: 10px 16px 40px; flex: 1; min-width: 0; }
+  #kit3d { flex: 0 0 min(44%, 760px); position: sticky; top: var(--header-h, 0px);
+    height: calc(100vh - var(--header-h, 0px)); display: flex; flex-direction: column;
+    border-left: 1px solid var(--line); background: var(--bg); }
+  #kit3d[hidden] { display: none; }
+  .k3-bar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding: 8px 10px;
+    border-bottom: 1px solid var(--line); font-size: 13px; }
+  .k3-bar .btn, .k3-bar .toggle { padding: 3px 9px; }
+  .k3-bar .close { margin-left: auto; }
+  .k3-view { flex: 1; min-height: 0; }
   .line { display: flex; margin-bottom: 12px; }
   .labels { width: var(--label-w); flex: none; padding-top: 20px; }
   .lab { height: var(--rh); line-height: var(--rh); font: 600 12px ui-monospace, Menlo, monospace;
@@ -104,6 +114,10 @@
     .pos { display: none; }
     .status { margin-left: 0; }
   }
+  @media (max-width: 900px) {
+    #workspace { flex-direction: column; align-items: stretch; }
+    #kit3d { order: -1; flex: none; height: 45vh; border-left: 0; border-bottom: 1px solid var(--line); z-index: 4; }
+  }
 </style>
 </head>
 <body>
@@ -134,16 +148,27 @@
       <button id="metro" class="toggle" title="Metrônomo (M)">Metrônomo</button>
       <button id="loop" class="toggle" title="Repetir trecho (L). Shift+clique num compasso define o fim.">Loop</button>
       <button id="follow" class="toggle on" title="Rolar a tab junto com a música (F)">Seguir</button>
+      <button id="kit3d-btn" class="toggle" title="Ver um baterista tocando a tab (B)">Bateria 3D</button>
       <button id="edit" class="toggle" title="Clique nas casas pra corrigir a tab (E)">Editar</button>
       <button id="save" class="btn" title="Salvar correções (Ctrl+S)" disabled>Salvar</button>
     </div>
   </div>
 </header>
 <div id="legend" class="legend"></div>
-<main id="tab"><div class="loading">Carregando…</div></main>
+<div id="workspace">
+  <main id="tab"><div class="loading">Carregando…</div></main>
+  <aside id="kit3d" hidden>
+    <div class="k3-bar">
+      <span id="k3-cams"></span>
+      <button id="k3-ant" class="toggle" title="Anel encolhendo na peça até a hora do golpe">Antecipação</button>
+      <button id="k3-close" class="btn close" title="Fechar (B)">Fechar</button>
+    </div>
+    <div id="k3-view" class="k3-view"></div>
+  </aside>
+</div>
 <footer class="help">
   <kbd>espaço</kbd> tocar/pausar · <kbd>A</kbd> A/B original × tab · <kbd>←</kbd><kbd>→</kbd> compasso ·
-  <kbd>L</kbd> loop · <kbd>M</kbd> metrônomo · <kbd>E</kbd> editar · <kbd>Ctrl+Z</kbd> desfazer · <kbd>Ctrl+S</kbd> salvar ·
+  <kbd>L</kbd> loop · <kbd>M</kbd> metrônomo · <kbd>B</kbd> bateria 3D (<kbd>1</kbd>–<kbd>4</kbd> câmeras) · <kbd>E</kbd> editar · <kbd>Ctrl+Z</kbd> desfazer · <kbd>Ctrl+S</kbd> salvar ·
   clique no número do compasso pra pular, <kbd>Shift</kbd>+clique pra marcar o loop ·
   clique no nome da peça (HH, SD…) pra silenciar na tab, <kbd>Shift</kbd>+clique pra solar.
 </footer>
@@ -241,6 +266,7 @@ async function init() {
   buffers.click = makeClick(1500); buffers.clickDown = makeClick(2200);
   status.textContent = "";
   $("#play").disabled = false;
+  if (pref("kit3d") === "1") toggleKit3D();
   requestAnimationFrame(frame);
 }
 
@@ -469,7 +495,7 @@ function updatePlayhead(t) {
     barEls[bar]?.el.classList.add("current");
     const line = barEls[bar]?.line;
     if (line && line !== st.lastLine && st.follow && st.playing && Date.now() - st.userScrollAt > 2500) {
-      const r = line.getBoundingClientRect(), top = $("header.top").offsetHeight;
+      const r = line.getBoundingClientRect(), top = stickyTop();
       if (r.top < top + 8 || r.bottom > innerHeight - 40) window.scrollBy({ top: r.top - top - 60, behavior: "smooth" });
     }
     st.lastLine = line;
@@ -502,6 +528,7 @@ function toggleNote(piece, step, ghost = false, record = true) {
   if (record) st.undo.push({ piece, step, before });
   markDirty(true);
   refreshCell(piece, step);
+  kit3dSongChanged();
 }
 function refreshCell(piece, step) {
   const el = document.querySelector(`.c[data-p="${piece}"][data-s="${step}"]`); if (!el) return;
@@ -517,6 +544,7 @@ function undo() {
   if (u.before) { notes.push(u.before); notes.sort((a, b) => a.step - b.step); }
   markDirty(st.undo.length > 0);
   refreshCell(u.piece, u.step);
+  kit3dSongChanged();
 }
 function markDirty(d) {
   st.dirty = d; $("#save").disabled = !d;
@@ -534,12 +562,85 @@ async function save() {
     const t = songTime();
     song = await res.json(); setupSong();
     st.undo = []; markDirty(false); renderLegend(); renderTab(); updatePlayhead(t);
+    kit3dSongChanged();
     toast("Salvo — tab.txt, drums.mid e áudios atualizados");
   } catch (e) {
     toast("Erro ao salvar: " + e.message, 5000); markDirty(true);
   }
   $("#status").textContent = "";
 }
+
+// ---------- bateria 3D ----------
+const CAMS = ["baterista", "frente", "lado", "cima"];
+const CAM_LABEL = { baterista: "Baterista", frente: "Frente", lado: "Lado", cima: "Cima" };
+let kit3d = null, kit3dLoading = false, kit3dT;
+function pref(key, value) {
+  try {
+    if (value === undefined) return localStorage.getItem("drumsomething." + key);
+    localStorage.setItem("drumsomething." + key, value);
+  } catch { return null; }
+}
+function mutedPieces() {
+  return st.solo ? new Set(song.pieces.map((p) => p.key).filter((k) => k !== st.solo)) : new Set(st.muted);
+}
+function updateHeaderHeight() {
+  const h = $("header.top");
+  const sticky = getComputedStyle(h).position === "sticky";
+  document.documentElement.style.setProperty("--header-h", (sticky ? h.offsetHeight : 0) + "px");
+}
+function stickyTop() {
+  const h = $("header.top");
+  let top = getComputedStyle(h).position === "sticky" ? h.offsetHeight : 0;
+  const k = $("#kit3d");
+  if (kit3d && getComputedStyle(k).order === "-1") top += k.offsetHeight;
+  return top;
+}
+function setKit3DCamera(name) {
+  if (!kit3d) return;
+  kit3d.setCamera(name); pref("kit3d.camera", name);
+  document.querySelectorAll("[data-cam]").forEach((b) => b.classList.toggle("on", b.dataset.cam === name));
+}
+async function toggleKit3D() {
+  const panel = $("#kit3d");
+  if (kit3d) {
+    kit3d.dispose(); kit3d = null; panel.hidden = true; pref("kit3d", "0");
+    $("#kit3d-btn").classList.remove("on");
+    return;
+  }
+  if (kit3dLoading) return;
+  kit3dLoading = true;
+  try {
+    const { mountKit3D } = await import("./kit3d/kit3d.js");
+    panel.hidden = false;
+    updateHeaderHeight();
+    const camera = CAMS.includes(pref("kit3d.camera")) ? pref("kit3d.camera") : "baterista";
+    const anticipation = pref("kit3d.anticipation") === "1";
+    kit3d = mountKit3D($("#k3-view"), { song: { ...song, notes }, getTime: songTime, camera, anticipation });
+    kit3d.setMuted(mutedPieces());
+    $("#k3-cams").innerHTML = CAMS.map((c) =>
+      `<button class="toggle${c === camera ? " on" : ""}" data-cam="${c}">${CAM_LABEL[c]}</button>`).join(" ");
+    $("#k3-ant").classList.toggle("on", anticipation);
+    $("#kit3d-btn").classList.add("on");
+    pref("kit3d", "1");
+  } catch (e) {
+    panel.hidden = true;
+    toast("Não deu pra abrir a bateria 3D: " + e.message, 5000);
+  } finally {
+    kit3dLoading = false;
+  }
+}
+function kit3dSongChanged() {
+  if (!kit3d) return;
+  clearTimeout(kit3dT);
+  kit3dT = setTimeout(() => kit3d?.setSong({ ...song, notes }), 80);
+}
+$("#kit3d-btn").onclick = toggleKit3D;
+$("#k3-close").onclick = toggleKit3D;
+$("#k3-cams").addEventListener("click", (e) => { const c = e.target.dataset.cam; if (c) setKit3DCamera(c); });
+$("#k3-ant").onclick = () => {
+  const on = !$("#k3-ant").classList.contains("on");
+  $("#k3-ant").classList.toggle("on", on); kit3d?.setAnticipation(on); pref("kit3d.anticipation", on ? "1" : "0");
+};
 
 // ---------- eventos ----------
 $("#play").onclick = () => (st.playing ? stop() : play());
@@ -574,6 +675,7 @@ $("#tab").addEventListener("click", (e) => {
       l.classList.toggle("muted", st.muted.has(l.dataset.piece));
       l.classList.toggle("solo", st.solo === l.dataset.piece);
     });
+    kit3d?.setMuted(mutedPieces());
     return;
   }
   const cell = e.target.closest(".c[data-p]");
@@ -601,12 +703,19 @@ addEventListener("keydown", (e) => {
   else if (k === "m") $("#metro").click();
   else if (k === "e") $("#edit").click();
   else if (k === "f") $("#follow").click();
+  else if (k === "b") toggleKit3D();
+  else if (kit3d && "1234".includes(k)) setKit3DCamera(CAMS[+k - 1]);
   else if (k === "home") seek(0);
 });
 addEventListener("wheel", () => { st.userScrollAt = Date.now(); }, { passive: true });
 addEventListener("touchmove", () => { st.userScrollAt = Date.now(); }, { passive: true });
-let resizeT;
-addEventListener("resize", () => { clearTimeout(resizeT); resizeT = setTimeout(renderTab, 150); });
+let resizeT, tabWidth = 0;
+new ResizeObserver(() => {
+  const w = $("#tab").clientWidth;
+  if (w === tabWidth || !song) return;
+  tabWidth = w; clearTimeout(resizeT); resizeT = setTimeout(renderTab, 120);
+}).observe($("#tab"));
+new ResizeObserver(updateHeaderHeight).observe($("header.top"));
 addEventListener("beforeunload", (e) => { if (st.dirty) { e.preventDefault(); e.returnValue = ""; } });
 
 init().catch((e) => { $("#tab").innerHTML = `<div class="loading">Erro: ${e.message}</div>`; console.error(e); });
