@@ -149,9 +149,9 @@ export function plushMaterial(kind, { slots = 1, rope = -1, sheen = 0.85, sheenM
     const vBody = ["vBind = position;"];
     const fHead = [NOISE];
     if (fur) {
-      vHead.push("attribute vec2 fur;", "varying vec2 vFur;");
-      vBody.push("vFur = fur;");
-      fHead.push("varying vec2 vFur;", "uniform vec3 uFur;", "uniform vec3 uStripe;", "uniform vec3 uCream;");
+      vHead.push("attribute vec2 fur;", "attribute float ao;", "varying vec2 vFur;", "varying float vAo;");
+      vBody.push("vFur = fur;", "vAo = ao;");
+      fHead.push("varying vec2 vFur;", "varying float vAo;", "uniform vec3 uFur;", "uniform vec3 uStripe;", "uniform vec3 uCream;");
     } else {
       vHead.push("attribute float slot;", `uniform vec4 uPal[${slots}];`, `uniform vec3 uEmi[${slots}];`,
         "varying vec4 vPal;", "varying vec3 vEmi;");
@@ -174,7 +174,9 @@ export function plushMaterial(kind, { slots = 1, rope = -1, sheen = 0.85, sheenM
     float sw = fwidth(vFur.x) * 0.8 + 0.05, cw = fwidth(vFur.y) * 0.8 + 0.035;
     float s = smoothstep(0.62 - sw, 0.62 + sw, vFur.x);
     float c = smoothstep(0.5 - cw, 0.5 + cw, vFur.y);
-    diffuseColor.rgb = mix(mix(uFur, uStripe, s), uCream, c) * plushMottle;
+    // dobras escurecem (sombra de contato medida na geração), um pouco mais quentes
+    float occ = 1.0 - vAo;
+    diffuseColor.rgb = mix(mix(uFur, uStripe, s), uCream, c) * plushMottle * (1.0 - 0.5 * occ) * mix(vec3(1.0), vec3(1.0, 0.86, 0.78), occ * 0.6);
   }`
       : "diffuseColor.rgb = vPal.rgb * plushMottle;";
     if (hasRope) {

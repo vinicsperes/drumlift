@@ -97,6 +97,7 @@ export function createCat(rig, { palette = "laranja", onReady } = {}) {
     geo.setAttribute("bi", new Uint16BufferAttribute(b.skinIndex, 4));
     geo.setAttribute("bw", new BufferAttribute(b.skinWeight, 4));
     geo.setAttribute("fur", new BufferAttribute(b.fur, 2));
+    geo.setAttribute("ao", new BufferAttribute(b.ao, 1));
     geo.setIndex(new BufferAttribute(b.index, 1));
     const mesh = new Mesh(geo, furMat); // skinning de quatérnio duplo no shader
     mesh.name = "gato-corpo";
