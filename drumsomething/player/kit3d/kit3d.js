@@ -18,6 +18,9 @@ import { LIMB_NAMES } from "./theme.js";
 
 const FOV = 42;
 const CAMERA_TWEEN = 0.6; // s
+// Máquina fraca: se o quadro médio passar disso por 2 s, desenha com pixelRatio 1.
+const SLOW_FRAME_MS = 25;
+const SLOW_WINDOW_MS = 2000;
 
 export { CAMERA_NAMES, CAMERA_LABELS } from "./cameras.js";
 export { STYLE_NAMES, STYLE_LABELS } from "./styles.js";
@@ -165,6 +168,28 @@ export function mountKit3D(container, opts = {}) {
   ro.observe(root);
   resize(root.clientWidth, root.clientHeight);
 
+  // ---------- desempenho ----------
+  // Mede o intervalo entre quadros desenhados seguidos; quadros parados (nada
+  // mudou) e abas em segundo plano não contam.
+  const perf = { last: 0, sum: 0, n: 0 };
+  function watchPerf(rendered) {
+    const now = performance.now();
+    if (!rendered || document.hidden || renderer.getPixelRatio() <= 1) { perf.last = 0; return; }
+    const dt = perf.last ? now - perf.last : 0;
+    perf.last = now;
+    if (dt <= 0 || dt > 250) return;
+    perf.sum += dt;
+    perf.n++;
+    if (perf.sum < SLOW_WINDOW_MS) return;
+    if (perf.sum / perf.n > SLOW_FRAME_MS) {
+      renderer.setPixelRatio(1);
+      renderer.setSize(width, height, false);
+      dirty = true;
+    }
+    perf.sum = 0;
+    perf.n = 0;
+  }
+
   // ---------- quadro ----------
   function readTime() {
     let t;
@@ -178,11 +203,12 @@ export function mountKit3D(container, opts = {}) {
     const t = readTime();
     const moving = stepTween();
     const changed = controls.update();
-    if (t === lastT && !dirty && !moving && !changed) return;
+    if (t === lastT && !dirty && !moving && !changed) { watchPerf(false); return; }
     pose(t);
     renderer.render(scene, camera);
     lastT = t;
     dirty = false;
+    watchPerf(true);
   }
   raf = requestAnimationFrame(frame);
 
