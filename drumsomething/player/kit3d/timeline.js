@@ -19,6 +19,7 @@ export const LIMBS = ["MD", "ME", "PD", "PE"];
 export const PRIORITY = { crash: 0, ride: 1, hihat: 2, snare: 3, tom: 4, kick: 5 };
 
 const TOMS_HIGH_TO_LOW = ["tom1", "tom2", "floor"];
+const TOM_INST = new Set(TOMS_HIGH_TO_LOW);
 
 /** Primeiro índice com key(arr[i]) > x. */
 export function upperBound(arr, x, key = (v) => v.t) {
@@ -73,7 +74,8 @@ function cleanNotes(song) {
       step: Number.isFinite(n.step) ? n.step : null,
       vel: Math.min(1, Math.max(0, Number.isFinite(n.vel) ? n.vel : 0.8)),
       ghost: !!n.ghost,
-      inst: n.piece === "tom" ? null : n.piece,
+      // tom: a tab só diz "tom"; se a nota já disser qual (MIDI), respeita
+      inst: n.piece === "tom" ? (TOM_INST.has(n.inst) ? n.inst : null) : n.piece,
       limb: null,
     });
   }
@@ -84,7 +86,7 @@ function cleanNotes(song) {
 // Sequência de tons com até 1 tempo entre notas: do mais agudo pro mais grave.
 // Tom isolado vai pro tom 2.
 function assignToms(notes, clock) {
-  const toms = notes.filter((n) => n.piece === "tom");
+  const toms = notes.filter((n) => n.piece === "tom" && !n.inst);
   let start = 0;
   for (let i = 1; i <= toms.length; i++) {
     const brk = i === toms.length || toms[i].t - toms[i - 1].t > clock.beatLen(toms[i - 1].t) * 1.05;
