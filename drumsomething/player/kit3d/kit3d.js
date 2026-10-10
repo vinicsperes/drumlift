@@ -170,14 +170,14 @@ export function mountKit3D(container, opts = {}) {
 
   // ---------- desempenho ----------
   // Mede o intervalo entre quadros desenhados seguidos; quadros parados (nada
-  // mudou) e abas em segundo plano não contam.
+  // mudou), abas em segundo plano e engasgos de mais de 1 s não contam.
   const perf = { last: 0, sum: 0, n: 0 };
   function watchPerf(rendered) {
     const now = performance.now();
     if (!rendered || document.hidden || renderer.getPixelRatio() <= 1) { perf.last = 0; return; }
     const dt = perf.last ? now - perf.last : 0;
     perf.last = now;
-    if (dt <= 0 || dt > 250) return;
+    if (dt <= 0 || dt > 1000) return;
     perf.sum += dt;
     perf.n++;
     if (perf.sum < SLOW_WINDOW_MS) return;
