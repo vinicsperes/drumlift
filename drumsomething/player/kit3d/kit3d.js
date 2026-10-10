@@ -274,6 +274,8 @@ export function mountKit3D(container, opts = {}) {
       get avatar() { return avatarView(); },
       get rig() { return style.rig; },
       get styleObj() { return style; },
+      /** A câmera ainda está indo pra posição pronta? */
+      get tweening() { return !!tween; },
       renderer, camera, controls, scene,
       /** Calcula a pose no tempo t (sem desenhar). O próximo quadro volta pro getTime(). */
       pose(t) { pose(t); dirty = true; },
