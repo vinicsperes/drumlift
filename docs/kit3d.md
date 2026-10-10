@@ -152,8 +152,22 @@ Pra rodar, sirva a raiz do repositório (`python -m http.server` na raiz) e abra
 - Seek e loop não deixam a pose quebrada.
 - Nenhum erro no console. A página não rola na horizontal com 390 px de largura.
 
-## Integração (depois)
+## Decisões da implementação
 
-O player ganha um botão "Bateria 3D" que abre um painel com `mountKit3D`, passando
-`songTime` como relógio e o conjunto de peças silenciadas. O pipeline passa a copiar
-a pasta inteira `player/` pra saída, em vez de copiar só o `index.html`.
+Onde as regras acima não bastaram:
+
+- Ride é sempre MD, mesmo com pouco tempo: a ME não alcança o ride.
+- Prato da esquerda (chimbal/crash) + surdo: ME no prato e MD no surdo, sem cruzar os braços.
+- 3+ notas de mão juntas: o melhor prato + o melhor tambor (não descarta a caixa por um segundo prato).
+- Caixa sozinha logo depois de um par vai pra ME (toque duplo), a menos que a MD esteja
+  livre há 180 ms; assim a MD fica no ride.
+- Crash segue a mesma regra do chimbal: MD ocupada → ME.
+- A câmera `baterista` fica por cima do ombro **esquerdo**: pelo direito a cabeça esconde a caixa.
+- O tronco gira pra peças longe e o ombro avança até 7 cm pra alcançar.
+- Peças silenciadas desbotam pra cor do fundo, não piscam e não mostram anel, mas o baterista continua tocando.
+
+## Integração
+
+O player tem o botão "Bateria 3D" (`B`), que abre um painel com `mountKit3D`, passando
+`songTime` como relógio, as peças silenciadas e as notas editadas ainda não salvas.
+O pipeline copia a pasta `player/` inteira pra saída (menos `kit3d-dev.html`).
