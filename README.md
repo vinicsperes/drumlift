@@ -71,7 +71,8 @@ Ele mostra a tab rolando junto com a música, com a coluna atual destacada.
 - **Velocidade** de 50% a 100%. O som fica mais grave quando você desacelera.
 - **Metrônomo** marca as batidas detectadas (o primeiro tempo do compasso é mais agudo).
 
-**Pra ver quem toca o quê:** **Bateria 3D** (`B`) abre um baterista tocando a tab,
+**Pra ver quem toca o quê:** **Bateria 3D** (`B`) abre um gato de pelúcia tocando a tab
+(ou um manequim, no botão **Manequim**),
 sincronizado com o player (loop e velocidade valem pra ele também). Mostra qual
 membro bate em cada peça: mão direita (MD), mão esquerda (ME), pé direito (PD), pé
 esquerdo (PE). Câmeras `1` baterista, `2` frente, `3` lado (pés) e `4` cima; arraste

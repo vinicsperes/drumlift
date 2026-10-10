@@ -87,3 +87,13 @@ A máquina alvo é fraca (GeForce MX350 / GPU integrada).
 - O gato parece de pelúcia: em close na câmera `frente`, dá pra ver tecido, costuras,
   feijõezinhos e olhos de botão.
 - Nenhum erro no console. A página não rola na horizontal com 390 px de largura.
+
+## Notas da implementação
+
+- `pelucia` é o estilo padrão no player e na página de desenvolvimento.
+- A cabeça do gato é desenhada a 86% e 1,2 cm mais baixa que a do esqueleto, pra não
+  esconder o surdo na câmera `baterista`. O esqueleto e os alcances não mudam.
+- As listras usam um segundo conjunto de UV, então pontas dos membros e ombros ficam lisos.
+- Ao medir vazamento com `renderer.info.memory`, o manequim mostra 1 textura depois da
+  primeira troca: é a tabela DFG que o three.js cria uma vez pro material físico. Não cresce.
+
