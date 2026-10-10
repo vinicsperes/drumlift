@@ -129,12 +129,13 @@ export function createCatBones() {
     bones[B.peito].makeRotationFromQuaternion(qB).setPosition(pelvis);
     qC.copy(bindTorsoQ).slerp(qB, 0.5);
     bones[B.coluna].makeRotationFromQuaternion(qC).setPosition(pelvis);
-    // barriga: sacode pra frente e estufa, em volta do centro dela
+    // barriga: sacode pra frente e balança um pouquinho em volta do centro
+    // dela (só movimento rígido: o corpo usa skinning de quatérnio duplo)
     const j = m.belly;
-    mA.makeTranslation(BELLY_C.x, BELLY_C.y, BELLY_C.z)
-      .multiply(mB.makeTranslation(0, 0, -j))
-      .multiply(mC.makeScale(1 + j * 1.6, 1 - j * 1.2, 1 + j * 2.2))
-      .multiply(mB.makeTranslation(-BELLY_C.x, -BELLY_C.y, -BELLY_C.z));
+    qA.setFromAxisAngle(X, j * 2.2);
+    mA.makeTranslation(BELLY_C.x, BELLY_C.y - j * 0.4, BELLY_C.z - j)
+      .multiply(mB.makeRotationFromQuaternion(qA))
+      .multiply(mC.makeTranslation(-BELLY_C.x, -BELLY_C.y, -BELLY_C.z));
     bones[B.barriga].multiplyMatrices(bones[B.coluna], mA);
     // cabeça
     qA.setFromEuler(eul.set(HEAD_TILT + m.headPitch, m.headYaw, m.headRoll, "YXZ"));

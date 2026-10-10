@@ -67,6 +67,35 @@ const FIBER = /* glsl */ `
   }
 `;
 
+// Skinning de quatérnio duplo: cada osso chega como (rotação, dual) em
+// uDQ[2i], uDQ[2i+1]. Misturar quatérnios em vez de matrizes não encolhe a
+// junta quando ela dobra nem torce como embrulho de bala.
+const DQ_HEAD = (n) => /* glsl */ `
+attribute vec4 bi;
+attribute vec4 bw;
+uniform vec4 uDQ[${n * 2}];
+`;
+const DQ_BLEND = /* glsl */ `
+  vec4 dqR, dqD;
+  {
+    int i0 = int(bi.x) * 2, i1 = int(bi.y) * 2, i2 = int(bi.z) * 2, i3 = int(bi.w) * 2;
+    vec4 r0 = uDQ[i0], r1 = uDQ[i1], r2 = uDQ[i2], r3 = uDQ[i3];
+    float w1 = dot(r0, r1) < 0.0 ? -bw.y : bw.y;
+    float w2 = dot(r0, r2) < 0.0 ? -bw.z : bw.z;
+    float w3 = dot(r0, r3) < 0.0 ? -bw.w : bw.w;
+    dqR = bw.x * r0 + w1 * r1 + w2 * r2 + w3 * r3;
+    dqD = bw.x * uDQ[i0 + 1] + w1 * uDQ[i1 + 1] + w2 * uDQ[i2 + 1] + w3 * uDQ[i3 + 1];
+    float l = length(dqR);
+    dqR /= l;
+    dqD /= l;
+  }
+  objectNormal += 2.0 * cross(dqR.xyz, cross(dqR.xyz, objectNormal) + dqR.w * objectNormal);
+`;
+const DQ_POINT = /* glsl */ `
+  transformed += 2.0 * cross(dqR.xyz, cross(dqR.xyz, transformed) + dqR.w * transformed)
+    + 2.0 * (dqR.w * dqD.xyz - dqD.w * dqR.xyz + cross(dqR.xyz, dqD.xyz));
+`;
+
 const SHEEN = /* glsl */ `
   {
     float nv = saturate(dot(normal, geometryViewDir));
@@ -93,14 +122,17 @@ const GLOSS = /* glsl */ `
  * Material de feltro.
  * - kind "fur": atributo `fur` (vec2: listra, creme); cores em u.fur/u.stripe/u.cream.
  * - kind "palette": atributo `slot` (float); cor em u.pal[slot] (Vector4: rgb linear e
- *   aspereza; abaixo de 0,5 ganha brilho de botão) e brilho próprio em u.emi[slot]. `rope` = slot que
+ *   aspereza; abaixo de 0,5 ganha brilho de botão) e brilho próprio em u.emi[slot].
+ * - dq = número de ossos: skinning de quatérnio duplo (atributos `bi`, `bw` e
+ *   u.uDQ, 8 floats por osso), pra malhas comuns (não SkinnedMesh). `rope` = slot que
  *   ganha o padrão de corda torcida (usa o atributo `puv`).
  */
-export function plushMaterial(kind, { slots = 1, rope = -1, sheen = 0.85, sheenMix = 0.45, bump = 0.00045 } = {}) {
+export function plushMaterial(kind, { slots = 1, rope = -1, sheen = 0.85, sheenMix = 0.45, bump = 0.00045, dq = 0 } = {}) {
   const mat = new MeshLambertMaterial();
   const u = {
     uBump: { value: bump }, uSheen: { value: sheen }, uSheenMix: { value: sheenMix },
   };
+  if (dq) u.uDQ = { value: new Float32Array(dq * 8) };
   if (kind === "fur") {
     u.uFur = { value: new Color() };
     u.uStripe = { value: new Color() };
@@ -131,8 +163,12 @@ export function plushMaterial(kind, { slots = 1, rope = -1, sheen = 0.85, sheenM
         fHead.push("varying vec3 vRope;");
       }
     }
+    if (dq) {
+      vHead.push(DQ_HEAD(dq));
+      vs = vs.replace("#include <beginnormal_vertex>", `#include <beginnormal_vertex>\n${DQ_BLEND}`);
+    }
     vs = vs.replace("#include <common>", `#include <common>\n${vHead.join("\n")}`)
-      .replace("#include <begin_vertex>", `#include <begin_vertex>\n${vBody.join("\n")}`);
+      .replace("#include <begin_vertex>", `#include <begin_vertex>\n${vBody.join("\n")}${dq ? DQ_POINT : ""}`);
     let color = fur
       ? `{
     float sw = fwidth(vFur.x) * 0.8 + 0.02, cw = fwidth(vFur.y) * 0.8 + 0.02;
@@ -159,7 +195,7 @@ export function plushMaterial(kind, { slots = 1, rope = -1, sheen = 0.85, sheenM
     sh.vertexShader = vs;
     sh.fragmentShader = fs;
   };
-  mat.customProgramCacheKey = () => `plush-${kind}-${slots}-${rope}`;
+  mat.customProgramCacheKey = () => `plush-${kind}-${slots}-${rope}-${dq}`;
   mat.userData.u = u;
   return mat;
 }

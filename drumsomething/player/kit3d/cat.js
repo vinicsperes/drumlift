@@ -9,7 +9,7 @@
 // baquetas) ficam presos aos mesmos ossos e saem todos num draw call só.
 
 import {
-  Bone, BufferAttribute, BufferGeometry, Group, LatheGeometry, Matrix4, OctahedronGeometry, Quaternion, Skeleton,
+  Bone, BufferAttribute, BufferGeometry, Group, LatheGeometry, Matrix4, Mesh, OctahedronGeometry, Quaternion, Skeleton,
   SkinnedMesh, SphereGeometry, TorusGeometry, Uint16BufferAttribute, Vector2, Vector3,
 } from "../vendor/three.module.min.js";
 import { BODY } from "./layout.js";
@@ -296,15 +296,16 @@ export function createCat(rig, { palette = "laranja" } = {}) {
   const geo = new BufferGeometry();
   geo.setAttribute("position", new BufferAttribute(body.positions, 3));
   geo.setAttribute("normal", new BufferAttribute(body.normals, 3));
-  geo.setAttribute("skinIndex", new Uint16BufferAttribute(body.skinIndex, 4));
-  geo.setAttribute("skinWeight", new BufferAttribute(body.skinWeight, 4));
+  geo.setAttribute("bi", new Uint16BufferAttribute(body.skinIndex, 4));
+  geo.setAttribute("bw", new BufferAttribute(body.skinWeight, 4));
   geo.setAttribute("fur", new BufferAttribute(body.fur, 2));
   geo.setIndex(new BufferAttribute(body.index, 1));
-  const furMat = plushMaterial("fur", { sheen: 0.95, sheenMix: 0.5 });
-  const mesh = new SkinnedMesh(geo, furMat);
+  const nb = cat.bones.length;
+  const furMat = plushMaterial("fur", { sheen: 0.95, sheenMix: 0.5, dq: nb });
+  const dq = furMat.userData.u.uDQ.value;
+  const mesh = new Mesh(geo, furMat); // skinning de quatérnio duplo no shader
   mesh.name = "gato-corpo";
   mesh.frustumCulled = false;
-  mesh.bind(skeleton, new Matrix4());
   group.add(mesh);
 
   // ---------- detalhes ----------
@@ -319,13 +320,33 @@ export function createCat(rig, { palette = "laranja" } = {}) {
   const genMs = performance.now() - t0;
 
   // ---------- pose ----------
-  function update(t, prep) {
-    cat.update(rig, t, prep);
-    for (let i = 0; i < boneObjs.length; i++) {
-      boneObjs[i].matrix.copy(cat.bones[i]);
-      boneObjs[i].matrixWorld.copy(cat.bones[i]);
+  const bindInv = cat.bind.map((m) => m.clone().invert());
+  const dm = new Matrix4(), dqr = new Quaternion();
+  /** Quatérnio duplo (rotação, dual) da deformação de cada osso: osso * inverso da ligação. */
+  function writeDQ(src) {
+    for (let i = 0; i < nb; i++) {
+      dm.multiplyMatrices(src[i], bindInv[i]);
+      dqr.setFromRotationMatrix(dm);
+      if (dqr.w < 0) dqr.set(-dqr.x, -dqr.y, -dqr.z, -dqr.w);
+      const e = dm.elements, tx = e[12], ty = e[13], tz = e[14], o = i * 8;
+      dq[o] = dqr.x; dq[o + 1] = dqr.y; dq[o + 2] = dqr.z; dq[o + 3] = dqr.w;
+      // dual = ½ · (t, 0) · rotação
+      dq[o + 4] = 0.5 * (dqr.w * tx + ty * dqr.z - tz * dqr.y);
+      dq[o + 5] = 0.5 * (dqr.w * ty + tz * dqr.x - tx * dqr.z);
+      dq[o + 6] = 0.5 * (dqr.w * tz + tx * dqr.y - ty * dqr.x);
+      dq[o + 7] = -0.5 * (tx * dqr.x + ty * dqr.y + tz * dqr.z);
     }
   }
+  function update(t, prep) {
+    cat.update(rig, t, prep);
+    const src = api.showBind ? cat.bind : cat.bones; // showBind: só pra depurar a malha
+    for (let i = 0; i < boneObjs.length; i++) {
+      boneObjs[i].matrix.copy(src[i]);
+      boneObjs[i].matrixWorld.copy(src[i]);
+    }
+    writeDQ(src);
+  }
+  writeDQ(cat.bind);
 
   // ---------- cores ----------
   let pal = CAT_PALETTES[palette] || CAT_PALETTES.laranja;
@@ -355,8 +376,8 @@ export function createCat(rig, { palette = "laranja" } = {}) {
   /** Debug: centro da bolinha da baqueta no mundo (depois do update). */
   const tipWorld = (limb, out = new Vector3()) => out.copy(rig.arms[limb].dir).multiplyScalar(BODY.stickFront).add(rig.arms[limb].wrist);
 
-  return {
-    group, update, paint, setPalette, tipWorld, mesh, details, skeleton,
+  const api = {
+    group, update, paint, setPalette, tipWorld, mesh, details, skeleton, showBind: false,
     genMs, bodyMs: body.stats.ms, stats: body.stats,
     dispose() {
       geo.dispose();
@@ -366,4 +387,5 @@ export function createCat(rig, { palette = "laranja" } = {}) {
       skeleton.dispose();
     },
   };
+  return api;
 }
