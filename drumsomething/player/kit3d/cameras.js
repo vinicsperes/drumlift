@@ -36,8 +36,9 @@ const SILHOUETTE = (() => {
 // dir = de onde a câmera olha (do alvo pra câmera); bias = deslocamento do
 // alvo a partir do centro da caixa; margin = folga em volta (fração).
 const PRESETS = {
-  // 3/4 pela frente-esquerda, um pouco de cima: rosto, as duas mãos e o kit
-  frente: { dir: [-0.42, 0.4, -0.8], bias: [0, 0, 0], margin: 0.06 },
+  // 3/4 pela frente-direita, de cima: rosto, as duas mãos e o kit, sem prato
+  // na frente do corpo (do lado esquerdo do baterista ficam chimbal e crash)
+  frente: { dir: [0.34, 0.56, -0.76], bias: [0, 0, 0], margin: 0.06 },
   // por cima do ombro esquerdo: num kit de destro é ali que acontece quase tudo
   baterista: { dir: [-0.36, 0.78, 0.5], bias: [0, 0, 0], margin: 0.05 },
   // de lado, pela direita e um pouco por trás: mostra os pés nos pedais
