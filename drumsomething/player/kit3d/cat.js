@@ -26,7 +26,9 @@ const smooth01 = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
 // Tronco: superelipse de revolução no espaço do tronco (origem na pelve),
 // achatada na frente-trás.
 const TORSO = { yc: 0.26, h: 0.34, p: 2.6, rBottom: 0.2, rTop: 0.155, kz: 0.78 };
-const HEAD = { r: v3(0.158, 0.135, 0.142), pos: v3(...BODY.head), tilt: -0.18 };
+// scale: a cabeça de pelúcia é grande, mas não pode esconder o surdo na
+// câmera "baterista" (a que mais ensina)
+const HEAD = { r: v3(0.158, 0.135, 0.142), pos: v3(BODY.head[0], BODY.head[1] - 0.012, BODY.head[2]), tilt: -0.18, scale: 0.86 };
 const ARM = { upper: [0.058, 0.047], fore: [0.046, 0.04] };
 const LEG = { thigh: [0.076, 0.062], shin: [0.06, 0.05] };
 const PAW = v3(0.05, 0.057, 0.045);
@@ -224,6 +226,7 @@ export function createCat(rig, tex, { palette = "laranja" } = {}) {
   // ---------- cabeça ----------
   const head = new Group();
   head.position.copy(HEAD.pos);
+  head.scale.setScalar(HEAD.scale);
   head.rotation.x = HEAD.tilt;
   torso.add(head);
   {
