@@ -71,6 +71,7 @@
     border-bottom: 1px solid var(--line); font-size: 13px; }
   .k3-bar .btn, .k3-bar .toggle { padding: 3px 9px; }
   .k3-bar .close { margin-left: auto; }
+  #k3-styles { padding-right: 6px; margin-right: 2px; border-right: 1px solid var(--line); }
   .k3-view { flex: 1; min-height: 0; }
   .line { display: flex; margin-bottom: 12px; }
   .labels { width: var(--label-w); flex: none; padding-top: 20px; }
@@ -159,6 +160,7 @@
   <main id="tab"><div class="loading">Carregando…</div></main>
   <aside id="kit3d" hidden>
     <div class="k3-bar">
+      <span id="k3-styles"></span>
       <span id="k3-cams"></span>
       <button id="k3-ant" class="toggle" title="Anel encolhendo na peça até a hora do golpe">Antecipação</button>
       <button id="k3-close" class="btn close" title="Fechar (B)">Fechar</button>
@@ -610,15 +612,18 @@ async function toggleKit3D() {
   if (kit3dLoading) return;
   kit3dLoading = true;
   try {
-    const { mountKit3D } = await import("./kit3d/kit3d.js");
+    const { mountKit3D, STYLE_NAMES, STYLE_LABELS } = await import("./kit3d/kit3d.js");
     panel.hidden = false;
     updateHeaderHeight();
     const camera = CAMS.includes(pref("kit3d.camera")) ? pref("kit3d.camera") : "baterista";
     const anticipation = pref("kit3d.anticipation") === "1";
-    kit3d = mountKit3D($("#k3-view"), { song: { ...song, notes }, getTime: songTime, camera, anticipation });
+    const style = STYLE_NAMES.includes(pref("kit3d.style")) ? pref("kit3d.style") : "pelucia";
+    kit3d = mountKit3D($("#k3-view"), { song: { ...song, notes }, getTime: songTime, camera, anticipation, style });
     kit3d.setMuted(mutedPieces());
     $("#k3-cams").innerHTML = CAMS.map((c) =>
       `<button class="toggle${c === camera ? " on" : ""}" data-cam="${c}">${CAM_LABEL[c]}</button>`).join(" ");
+    $("#k3-styles").innerHTML = STYLE_NAMES.map((n) =>
+      `<button class="toggle${n === style ? " on" : ""}" data-style="${n}">${STYLE_LABELS[n]}</button>`).join(" ");
     $("#k3-ant").classList.toggle("on", anticipation);
     $("#kit3d-btn").classList.add("on");
     pref("kit3d", "1");
@@ -637,6 +642,12 @@ function kit3dSongChanged() {
 $("#kit3d-btn").onclick = toggleKit3D;
 $("#k3-close").onclick = toggleKit3D;
 $("#k3-cams").addEventListener("click", (e) => { const c = e.target.dataset.cam; if (c) setKit3DCamera(c); });
+$("#k3-styles").addEventListener("click", (e) => {
+  const name = e.target.dataset.style;
+  if (!name || !kit3d) return;
+  kit3d.setStyle(name); pref("kit3d.style", name);
+  document.querySelectorAll("[data-style]").forEach((b) => b.classList.toggle("on", b.dataset.style === name));
+});
 $("#k3-ant").onclick = () => {
   const on = !$("#k3-ant").classList.contains("on");
   $("#k3-ant").classList.toggle("on", on); kit3d?.setAnticipation(on); pref("kit3d.anticipation", on ? "1" : "0");
