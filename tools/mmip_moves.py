@@ -10,6 +10,11 @@ com crédito e a mesma licença, que o player usa pra tocar como gente:
   serve pra qualquer kit: no nosso, as poses de golpe são as nossas e o
   resíduo (subida, arco, giro do pulso, abertura do cotovelo) é o do baterista
   real. Comprimido por PCA, por mão.
+- corpo: quanto a pelve, a coluna, o pescoço, a cabeça e as clavículas saem da
+  pose média. Uma parte segue as mãos (o tronco gira pro lado da mão que vai
+  longe): uma regressão linear das posições dos pulsos (antes, agora e depois)
+  pros desvios do corpo. O resto (balanço, olhadas, ajustes) fica em trechos de
+  8 tempos amostrados no tempo da música, pra tocar no tempo da nossa.
 
 uso (depois de `tools/mmip.py fetch` e `node tools/mmip_bones.mjs songs/mmip/NN`):
   uv run python tools/mmip_moves.py            # todas as performances baixadas
@@ -46,6 +51,15 @@ N = 28            # amostras por golpe
 WARP = 0.75       # amostras mais densas perto das notas (rebote e descida)
 GAP_MIN, GAP_MAX = 0.07, 2.4
 K = 14            # componentes da PCA por mão
+# corpo: (osso, pai) de cada desvio; a pelve é o desvio dela no mundo
+BODY = [("Hips", None), ("Spine1", "Hips"), ("Spine3", "Spine1"), ("Spine4", "Spine3"), ("Neck", "Spine4"),
+        ("Head", "Neck"), ("RightShoulder", "Spine4"), ("LeftShoulder", "Spine4")]
+BODY_NAMES = ["pelve", "lombar", "toracica", "peito", "pescoco", "cabeca", "claviculaMD", "claviculaME"]
+HP_SEC = 2.0      # some com o que é mais lento que isso (deriva da roupa de sensores)
+LAGS = (-0.2, 0.0, 0.2)
+SPB = 4           # amostras por tempo nos trechos de groove
+CLIP = 8          # tempos por trecho (+1 de sobreposição pra emendar)
+MAX_CLIPS = 240
 
 
 # ---------- quatérnios (x, y, z, w), vetorizados ----------
@@ -301,13 +315,121 @@ def segments(D: dict, strokes: list):
     return out
 
 
+def highpass(Y, fps, sec=HP_SEC):
+    """Tira a média móvel de ±sec segundos (o que sobra é o movimento, sem deriva)."""
+    k = int(sec * fps)
+    c = np.cumsum(np.vstack([np.zeros((1,) + Y.shape[1:]), Y]), 0)
+    i = np.arange(len(Y))
+    a, b = np.maximum(0, i - k), np.minimum(len(Y), i + k + 1)
+    return Y - (c[b] - c[a]) / (b - a)[:, None]
+
+
+def body_tracks(D: dict):
+    """Desvios do corpo (rad, vetor de rotação no frame do baterista: x direita,
+    y cima, z trás) e posição dos pulsos nesse frame, quadro a quadro, sem deriva."""
+    P, Q, B, fps = D["pos"], D["quat"], D["B"], D["fps"]
+    hips = P[:, B["Hips"]]
+    hands = (P[:, B["RightHand"]] + P[:, B["LeftHand"]]) / 2
+    fwd = (hands - hips).mean(0)
+    fwd[1] = 0
+    fwd /= np.linalg.norm(fwd)
+    up = np.array([0, 1.0, 0])
+    right = np.cross(fwd, up)
+    right /= np.linalg.norm(right)
+    R = np.stack([right, up, -fwd], 1)  # colunas: direita, cima, trás (no mundo)
+    mean_q = lambda q: q.mean(0) / np.linalg.norm(q.mean(0))
+    Y = []
+    for child, parent in BODY:
+        qc = Q[:, B[child]]
+        if parent is None:
+            qm = mean_q(qc)
+            rv = qlog(qmul(qc, np.broadcast_to(qconj(qm), qc.shape)))           # já no mundo
+        else:
+            ql = qmul(qconj(Q[:, B[parent]]), qc)
+            qm = mean_q(ql)
+            rv = qrot(np.broadcast_to(mean_q(qc), qc.shape), qlog(qmul(np.broadcast_to(qconj(qm), ql.shape), ql)))
+        Y.append(rv @ R)
+    # a pelve também anda (balança no banco): posição no frame do baterista
+    Y.append((hips - hips.mean(0)) @ R)
+    Y = highpass(np.concatenate(Y, 1), fps)
+    X = np.concatenate([(P[:, B["RightHand"]] - hips.mean(0)) @ R, (P[:, B["LeftHand"]] - hips.mean(0)) @ R], 1)
+    return highpass(X, fps), Y
+
+
+def lagged(X, fps):
+    """Pulsos antes, agora e depois (LAGS), lado a lado."""
+    n = len(X)
+    cols = []
+    for l in LAGS:
+        i = np.clip(np.arange(n) + int(round(l * fps)), 0, n - 1)
+        cols.append(X[i])
+    return np.concatenate(cols, 1)
+
+
+def build_body(takes_data: list) -> dict:
+    """Regressão mãos -> corpo e trechos de groove em tempo de música."""
+    XS, YS = [], []
+    for D, _ in takes_data:
+        X, Y = body_tracks(D)
+        m = int(HP_SEC * D["fps"])  # bordas sem média completa
+        XS.append(lagged(X, D["fps"])[m:-m])
+        YS.append(Y[m:-m])
+    X = np.concatenate(XS)
+    Y = np.concatenate(YS)
+    Xb = np.concatenate([X, np.ones((len(X), 1))], 1)
+    W = np.linalg.solve(Xb.T @ Xb + 1e-2 * len(X) * np.eye(Xb.shape[1]), Xb.T @ Y)
+    r2 = 1 - (Y - Xb @ W).var(0) / Y.var(0)
+
+    clips, feats = [], []
+    for D, strokes in takes_data:
+        X, Y = body_tracks(D)
+        fps = D["fps"]
+        res = Y - np.concatenate([lagged(X, fps), np.ones((len(X), 1))], 1) @ W
+        beats = np.array(D["song"]["beats"])
+        hand_t = np.array([s["t"] for s in strokes])
+        kick_t = np.array([n["t"] for n in D["song"]["notes"] if n["piece"] == "kick"])
+        m = int(HP_SEC * fps) / fps
+        for k in range(0, len(beats) - CLIP - 1, CLIP):
+            b0, b1 = beats[k], beats[k + CLIP]
+            if b0 < m or beats[k + CLIP + 1] > len(Y) / fps - m:
+                continue
+            nh = ((hand_t >= b0) & (hand_t < b1)).sum()
+            if nh < CLIP:  # parado: não é groove
+                continue
+            ts = np.concatenate([beats[j] + (beats[j + 1] - beats[j]) * np.arange(SPB) / SPB for j in range(k, k + CLIP + 1)])
+            c = at(res, fps, ts)
+            if np.abs(c[:, :24]).max() > np.radians(14) or np.abs(c[:, 24:]).max() > 0.06:  # tranco de sensor
+                continue
+            clips.append(c.astype(np.float32))
+            feats.append((np.mean(np.diff(beats[k:k + CLIP + 1])), nh / CLIP, ((kick_t >= b0) & (kick_t < b1)).sum() / CLIP))
+    idx = np.linspace(0, len(clips) - 1, min(MAX_CLIPS, len(clips))).round().astype(int)
+    C = np.stack([clips[i] for i in idx])                     # (n, (CLIP+1)*SPB, 24)
+    F = np.array([feats[i] for i in idx])
+    cs = np.abs(C).reshape(-1, C.shape[-1]).max(0) / 127
+    names = [f"{BODY_NAMES[j // 3]}.{'xyz'[j % 3]}" for j in range(24)] + ["pelve-pos.x", "pelve-pos.y", "pelve-pos.z"]
+    print(f"corpo: {len(C)} trechos de groove de {len(clips)}; R² do alcance "
+          + " ".join(f"{names[j]} {r2[j]:.2f}" for j in range(len(r2)) if r2[j] > 0.2), flush=True)
+    sd = Y.std(0)
+    print("   desvio da pelve (mm, sem deriva):", (sd[24:] * 1000).round(1).tolist(), flush=True)
+    return {
+        "joints": BODY_NAMES, "position": "pelve (m, frame do baterista)", "lags": list(LAGS), "highpass": HP_SEC,
+        "W": b64(W.astype(np.float32)), "inputs": X.shape[1] + 1, "outputs": Y.shape[1],
+        "r2": [round(float(x), 3) for x in r2],
+        "spb": SPB, "clipBeats": CLIP, "n": len(C),
+        "clips": b64(np.round(C / cs).astype(np.int8)), "clipScale": cs.astype(np.float32).tolist(),
+        "clipFeat": {"beat": b64(np.round(F[:, 0] * 1000).astype(np.uint16)),
+                     "dens": b64(np.round(F[:, 1] * 10).astype(np.uint8)),
+                     "kick": b64(np.round(F[:, 2] * 10).astype(np.uint8))},
+    }
+
+
 def b64(arr: np.ndarray) -> str:
     return base64.b64encode(np.ascontiguousarray(arr).tobytes()).decode()
 
 
 def build(takes: list[int]) -> dict:
     segs = {h: [] for h in HANDS}
-    info = []
+    info, kept = [], []
     for n in takes:
         D = load_take(n)
         if D is None:
@@ -319,6 +441,11 @@ def build(takes: list[int]) -> dict:
             continue
         strokes = assign_hands(D, lat)
         sg = segments(D, strokes)
+        # o corpo usa o tempo da música do movimento (MIDI + atraso)
+        D["song"]["beats"] = [b + lat for b in D["song"]["beats"]]
+        for x in D["song"]["notes"]:
+            x["t"] += lat
+        kept.append((D, strokes))
         for h in HANDS:
             segs[h] += sg[h]
         info.append({"take": n, "latency_ms": round(lat * 1000, 1), "strokes": len(strokes),
@@ -369,11 +496,14 @@ def build(takes: list[int]) -> dict:
         print(f"   no golpe (graus) giro {({k: round(np.degrees(v)) for k, v in rl.items()})} "
               f"cotovelo {({k: round(np.degrees(v)) for k, v in sw.items()})}", flush=True)
 
+    body = build_body(kept)
     return {
-        "credit": CREDIT, "license": "CC BY-NC-SA 4.0", "version": 1,
+        "credit": CREDIT, "license": "CC BY-NC-SA 4.0", "version": 1, "body": body,
         "about": "Golpes de cada mão entre duas notas seguidas, em relação ao caminho reto entre as poses de golpe. "
                  "Canais por amostra: posição do pulso no frame de rumo (m: direita, cima, trás), giro da mão "
-                 "(vetor de rotação no espaço da mão, rad) e abertura do cotovelo (rad).",
+                 "(vetor de rotação no espaço da mão, rad) e abertura do cotovelo (rad). Corpo: desvios da pose "
+                 "média (vetor de rotação no frame do baterista: x direita, y cima, z trás), parte pela regressão "
+                 "das posições dos pulsos, parte por trechos de 8 tempos.",
         "samples": N, "warp": WARP, "channels": ["px", "py", "pz", "rx", "ry", "rz", "swivel"],
         "insts": INSTS, "gap": [GAP_MIN, GAP_MAX], "k": K, "takes": info, "hands": hands,
     }

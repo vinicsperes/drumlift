@@ -50,7 +50,18 @@ export function parseMoves(json) {
       a: f.a, b: f.b, g: f.g, va: f.va, vb: f.vb, gp: f.gp, gn: f.gn, beat: f.beat, byPair, swivel: d.swivel,
     };
   }
-  return { N, C, warp: json.warp, insts: json.insts, gap: json.gap, hands, credit: json.credit };
+  let body = null;
+  if (json.body) {
+    const b = json.body, C2 = b.outputs;
+    const raw = decode(b.clips, Int8Array), clips = new Float32Array(raw.length);
+    for (let i = 0; i < raw.length; i++) clips[i] = raw[i] * b.clipScale[i % C2];
+    body = {
+      joints: b.joints, lags: b.lags, highpass: b.highpass, W: decode(b.W, Float32Array), inputs: b.inputs, outputs: C2,
+      spb: b.spb, clipBeats: b.clipBeats, n: b.n, clips, clipLen: (b.clipBeats + 1) * b.spb,
+      beat: decode(b.clipFeat.beat, Uint16Array), dens: decode(b.clipFeat.dens, Uint8Array), kick: decode(b.clipFeat.kick, Uint8Array),
+    };
+  }
+  return { N, C, warp: json.warp, insts: json.insts, gap: json.gap, hands, body, credit: json.credit };
 }
 
 /** Curva de resíduo (N x C, Float32Array) do recorte i da mão h. */
