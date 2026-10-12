@@ -6,7 +6,7 @@ import { AnimationMixer, MeshStandardMaterial, Quaternion, Vector3 } from "../ve
 import { FBXLoader } from "../vendor/FBXLoader.js";
 
 export const JOINTS = [
-  "Hips", "Spine3", "Neck", "Head",
+  "Hips", "Spine1", "Spine2", "Spine3", "Neck", "Head",
   "RightArm", "RightForeArm", "RightHand", "RightFinger2Proximal",
   "LeftArm", "LeftForeArm", "LeftHand", "LeftFinger2Proximal",
   "RightFoot", "RightToe", "LeftFoot", "LeftToe",
@@ -33,6 +33,15 @@ export async function loadReal(url, onProgress = () => {}) {
     obj.updateMatrixWorld(true);
   }
 
+  // Algumas sessões gravaram os ossos girados 180° em x (y e z do osso com o
+  // sinal trocado). Normaliza as mãos pra y = do pulso pros dedos, z = dorso.
+  const FLIP = new Quaternion(1, 0, 0, 0);
+  setTime(clip.duration / 2);
+  const flip = (() => {
+    const a = bones.Spine1.getWorldPosition(new Vector3()), b = bones.Spine2.getWorldPosition(new Vector3());
+    return b.sub(a).applyQuaternion(bones.Spine1.getWorldQuaternion(new Quaternion()).invert()).y < 0;
+  })();
+
   /** Posição (m) de cada junta e rotação das mãos, quadro a quadro. */
   function sample(fps = 120) {
     const n = Math.floor(clip.duration * fps);
@@ -47,6 +56,7 @@ export async function loadReal(url, onProgress = () => {}) {
       }
       for (const h of HANDS) {
         bones[h].getWorldQuaternion(q);
+        if (flip) q.multiply(FLIP);
         quat[h][i * 4] = q.x; quat[h][i * 4 + 1] = q.y; quat[h][i * 4 + 2] = q.z; quat[h][i * 4 + 3] = q.w;
       }
     }
@@ -54,7 +64,7 @@ export async function loadReal(url, onProgress = () => {}) {
   }
 
   return {
-    object: obj, bones, clip, setTime, sample, duration: clip.duration,
+    object: obj, bones, clip, setTime, sample, duration: clip.duration, flip,
     dispose() { obj.traverse((o) => { o.geometry?.dispose?.(); }); skin.dispose(); },
   };
 }
