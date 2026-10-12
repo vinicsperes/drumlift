@@ -6,9 +6,11 @@
 //   view.setMuted(new Set(["hihat"])); view.setAnticipation(true);
 //   view.setStyle("pelucia" | "manequim"); view.style; view.dispose();
 //   view.setInsets({ top, right, bottom, left }); // px cobertos por painéis por cima
+//   await view.planReady; // performance assada a partir da captura (moves/)
 //
-// Opções: `transparent` (a página desenha o fundo) e `legend: false` (sem a
-// legenda dos membros, quando a página mostra a dela).
+// Opções: `transparent` (a página desenha o fundo), `legend: false` (sem a
+// legenda dos membros, quando a página mostra a dela) e `moves: false` (só o
+// modelo procedural, sem os golpes do baterista real).
 // O módulo não toca áudio e não é dono do relógio: chama getTime() a cada quadro
 // e calcula a pose inteira a partir desse tempo.
 
@@ -24,6 +26,8 @@ const CAMERA_TWEEN = 0.6; // s
 // Máquina fraca: se o quadro médio passar disso por 2 s, desenha com pixelRatio 1.
 const SLOW_FRAME_MS = 25;
 const SLOW_WINDOW_MS = 2000;
+// Golpes de um baterista real (tools/mmip_moves.py); o plano sai num Worker.
+const MOVES_URL = new URL("./moves/mmip.json", import.meta.url).href;
 
 export { CAMERA_NAMES, CAMERA_LABELS } from "./cameras.js";
 export { STYLE_NAMES, STYLE_LABELS } from "./styles.js";
@@ -99,6 +103,8 @@ export function mountKit3D(container, opts = {}) {
 
   // ---------- estado ----------
   let prep = prepareSong(opts.song);
+  let plan = null, planId = 0, planWorker = null, planDone = null;
+  const useMoves = opts.moves !== false;
   let anticipation = !!opts.anticipation;
   let muted = new Set();
   let camName = CAMERA_NAMES.includes(opts.camera) ? opts.camera : "frente";
@@ -240,6 +246,47 @@ export function mountKit3D(container, opts = {}) {
   }
   raf = requestAnimationFrame(frame);
 
+  // ---------- performance assada ----------
+  // A cada música (ou edição), um Worker escolhe pra cada golpe o recorte real
+  // mais parecido; enquanto isso, e se algo falhar, vale o modelo procedural.
+  let planReady = Promise.resolve(null);
+  function requestPlan(song) {
+    const id = ++planId;
+    plan = null;
+    style.rig.setPlan(null);
+    if (!useMoves || !song || !Array.isArray(song.notes)) { planReady = Promise.resolve(null); return; }
+    planReady = new Promise((resolve) => { planDone = resolve; });
+    const msg = { id, song: { notes: song.notes, beats: song.beats, tempo: song.tempo, duration: song.duration }, url: MOVES_URL };
+    try {
+      planWorker ||= new Worker(new URL("./performworker.js", import.meta.url), { type: "module" });
+      planWorker.onmessage = (e) => applyPlan(e.data);
+      planWorker.onerror = (e) => { e.preventDefault?.(); planWorker = null; buildHere(msg); };
+      planWorker.postMessage(msg);
+    } catch {
+      buildHere(msg);
+    }
+  }
+  /** Sem Worker: monta aqui mesmo, depois de devolver o controle à página. */
+  function buildHere(msg) {
+    setTimeout(async () => {
+      try {
+        const [{ loadMoves }, { buildPlan }] = await Promise.all([import("./moves.js"), import("./perform.js")]);
+        const lib = await loadMoves(msg.url);
+        applyPlan({ id: msg.id, plan: buildPlan(prepareSong(msg.song), lib) });
+      } catch (err) {
+        applyPlan({ id: msg.id, error: String(err?.message || err) });
+      }
+    }, 0);
+  }
+  function applyPlan({ id, plan: p, error }) {
+    if (id !== planId || disposed) return;
+    if (error) console.warn("kit3d: performance procedural (", error, ")");
+    plan = p || null;
+    style.rig.setPlan(plan);
+    dirty = true;
+    planDone?.(plan);
+  }
+
   // ---------- estilo ----------
   // Troca ao vivo: câmera, controles, tempo e peças silenciadas ficam; o estilo
   // anterior libera geometrias, materiais e texturas antes do novo nascer.
@@ -250,6 +297,7 @@ export function mountKit3D(container, opts = {}) {
     styleName = name;
     style = createStyle(name, { renderer, scene }, { catColors });
     scene.add(style.group);
+    style.rig.setPlan(plan);
     style.setMuted(muted);
     applyTheme();
     dirty = true;
@@ -263,7 +311,9 @@ export function mountKit3D(container, opts = {}) {
 
   // ---------- API ----------
   const view = {
-    setSong(song) { prep = prepareSong(song); dirty = true; },
+    setSong(song) { prep = prepareSong(song); requestPlan(song); dirty = true; },
+    /** Promessa da performance assada da música atual (null = procedural). */
+    get planReady() { return planReady; },
     setCamera(name) {
       if (!CAMERA_NAMES.includes(name)) return;
       camName = name;
@@ -292,6 +342,7 @@ export function mountKit3D(container, opts = {}) {
       if (disposed) return;
       disposed = true;
       cancelAnimationFrame(raf);
+      planWorker?.terminate();
       ro.disconnect();
       mq?.removeEventListener?.("change", applyTheme);
       controls.removeEventListener("start", onStart);
@@ -305,6 +356,7 @@ export function mountKit3D(container, opts = {}) {
     // Ganchos pra testes; não fazem parte do contrato.
     _debug: {
       get prep() { return prep; },
+      get plan() { return plan; },
       get kit() { return style.kit; },
       get avatar() { return avatarView(); },
       get rig() { return style.rig; },
@@ -344,5 +396,6 @@ export function mountKit3D(container, opts = {}) {
     },
   };
   placeCamera(camName, false);
+  requestPlan(opts.song);
   return view;
 }

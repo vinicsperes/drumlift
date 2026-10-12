@@ -170,6 +170,7 @@ function toggleLoop() {
 const params = new URLSearchParams(location.search);
 const view = mountKit3D($("#stage"), {
   song: null, getTime: songTime, style: params.get("style") || undefined, catColors: params.get("cat") || undefined,
+  moves: params.get("moves") !== "0", // ?moves=0: só o modelo procedural
 });
 window.view = view;
 window.devClock = { clock, songTime, setTime, play, pause, seek, setRate, toggleLoop, barTime, barAt };

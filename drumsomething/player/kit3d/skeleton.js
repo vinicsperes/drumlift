@@ -64,9 +64,11 @@ export const SKEL = {
 };
 
 // Pegada: fulcro e direção da baqueta no espaço da mão (direita; x espelha na
-// esquerda). A baqueta atravessa a palma na diagonal, do pé da mão (lado do
-// mínimo) até sair entre o polegar e o indicador, encostada na palma.
-export const GRIP = { fulcrum: [-0.024, 0.088, -0.03], dir: [-0.6, 0.8, 0] };
+// esquerda). A baqueta atravessa a palma um pouco na diagonal, do pé da mão
+// até sair entre o polegar e o indicador, encostada na palma. A direção é um
+// meio-termo entre a anatomia e o que a captura indica (a nuvem de pontas das
+// baquetas fica mais junta com a baqueta quase no eixo da mão).
+export const GRIP = { fulcrum: [-0.024, 0.088, -0.03], dir: [-0.3, 0.95, 0] };
 
 // Dedos (direita, cm no espaço da mão): base, comprimento das 3 falanges e
 // flexão de cada junta na pegada (graus). O polegar sai do pé do polegar e

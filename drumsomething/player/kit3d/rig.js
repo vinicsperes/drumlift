@@ -10,10 +10,12 @@
 // levanta a baqueta no meio.
 
 import { Matrix4, Object3D, Quaternion, Vector3 } from "../vendor/three.module.min.js";
-import { BODY, HIHAT_PEDAL, KICK_PEDAL, TORSO_LIMIT, TORSO_REACH } from "./layout.js";
-import { contact, pedalAngle, strikeAngle } from "./pieces.js";
+import { BODY, CYMBALS, DRUMS, HIHAT_PEDAL, KICK_PEDAL, TORSO_LIMIT, TORSO_REACH } from "./layout.js";
+import { contact, pedalAngle, placeFrame, strikeAngle, surfaceY } from "./pieces.js";
 import { handState } from "./motion.js";
 import { BONE, FEET, HANDS, SKEL, createDrive, createSkeleton } from "./skeleton.js";
+import { segmentAt } from "./perform.js";
+import { unwarp } from "./moves.js";
 
 export { FEET, HANDS };
 export const TIP_R = 0.0085; // raio da bolinha na ponta da baqueta
@@ -44,15 +46,16 @@ const HEEL_LIFT = 0.16;    // rad no meio do tempo
 const YAW_SPLIT = [0.15, 0.25, 0.3, 0.3];
 const LEAN_SPLIT = [0.25, 0.3, 0.3, 0.15];
 const HEAD_DOWN = deg(-12); // a cabeça olha pra caixa
-// Pegada medida no baterista real (giro da mão em volta da baqueta: 0 = dorso
-// pra cima; + = polegar pra cima na direita) e abertura do cotovelo no golpe.
+// Pose de golpe medida no baterista real (tools/mmip_moves.py): giro da mão em
+// volta da baqueta (0 = dorso pra cima, pegada alemã; + = polegar pra cima) e
+// abertura do cotovelo (+ = pra fora), em graus.
 const ROLL = {
-  MD: { snare: 34, hihat: 38, tom1: 34, tom2: 46, floor: 55, crash: 34, ride: 55 },
-  ME: { snare: -17, hihat: -28, tom1: -11, tom2: -2, floor: -5, crash: -12, ride: -15 },
+  MD: { snare: 43, hihat: 41, tom1: 46, tom2: 57, floor: 62, crash: 40, ride: 64 },
+  ME: { snare: 24, hihat: 33, tom1: 31, tom2: 10, floor: 19, crash: 25, ride: 33 },
 };
 const SWIVEL = {
-  MD: { snare: 28, hihat: 24, tom1: 21, tom2: 22, floor: 18, crash: 41, ride: 32 },
-  ME: { snare: 10, hihat: 13, tom1: 13, tom2: 10, floor: 6, crash: 11, ride: 11 },
+  MD: { snare: 25, hihat: 23, tom1: 18, tom2: 21, floor: 19, crash: 39, ride: 32 },
+  ME: { snare: 9, hihat: 14, tom1: 10, tom2: 7, floor: 4, crash: 12, ride: 9 },
 };
 const HAND_TARGETS = ["snare", "hihat", "tom1", "tom2", "floor", "crash", "ride"];
 
@@ -87,9 +90,14 @@ export function createRig() {
         const d0 = along.multiplyScalar(Math.cos(beta)).addScaledVector(n, -Math.sin(beta)).normalize();
         const tip = P.clone().addScaledVector(n, TIP_R);
         const F0 = tip.clone().addScaledVector(d0, -SKEL.stickFront);
-        const q0 = stickQuat(d0, deg(ROLL[limb][id]));
+        // polegar pra cima gira o dorso pra fora: pra direita na mão direita, pra esquerda na esquerda
+        const q0 = stickQuat(d0, deg(ROLL[limb][id]) * (limb === "MD" ? 1 : -1));
+        // mão nessa pose (a baqueta vem da mão pela pegada fixa)
+        const g = skel.grip[limb];
+        const hq0 = q0.clone().multiply(g.q.clone().invert());
+        const hp0 = F0.clone().sub(g.f.clone().applyQuaternion(hq0));
         // H0 (antigo nome do fulcro) fica por compatibilidade
-        configs[limb][id] = { P: P.clone(), n: n.clone(), tip, d0, F0, H0: F0, q0, swivel: deg(SWIVEL[limb][id]) };
+        configs[limb][id] = { P: P.clone(), n: n.clone(), tip, d0, F0, H0: F0, q0, hq0, hp0, swivel: deg(SWIVEL[limb][id]) };
       }
     }
   }
@@ -113,6 +121,81 @@ export function createRig() {
   const torso = new Object3D();
   torso.position.copy(pelvis);
   torso.rotation.order = "YXZ";
+
+  // ---------- performance assada (perform.js) ----------
+  // Com plano, cada golpe coberto usa o recorte de um baterista real: a mão sai
+  // do caminho reto entre as duas poses de golpe pelo resíduo gravado (no frame
+  // de rumo dela), gira pelo giro gravado e o cotovelo abre como o dele. Nas
+  // pontas o resíduo é zero: a baqueta encosta exatamente na nota.
+  let plan = null;
+  const res = new Float32Array(8);
+  const baseP = new Vector3(), baseQ = new Quaternion(), handP = new Vector3(), handQ = new Quaternion();
+  const fwd = new Vector3(), back = new Vector3(), right = new Vector3(), rv = new Vector3(), dq = new Quaternion();
+  const tipV = new Vector3();
+  const minjerk = (u) => u * u * u * (10 - 15 * u + 6 * u * u);
+  // frame de cada peça (origem no centro da superfície de golpe, y = normal)
+  const pieceFrames = {};
+  {
+    const o = new Object3D();
+    for (const id of HAND_TARGETS) {
+      placeFrame(id, o);
+      const r = (DRUMS[id] || CYMBALS[id]).r;
+      pieceFrames[id] = { inv: o.matrix.clone().invert(), n: new Vector3(0, 1, 0).applyQuaternion(o.quaternion), r };
+    }
+  }
+  /** Empurra a baqueta pra fora da peça se a ponta estiver dentro dela (some suave na borda). */
+  function guard(st, id) {
+    const f = pieceFrames[id];
+    tipV.set(0, SKEL.stickFront, 0).applyQuaternion(st.quat).add(st.pos).applyMatrix4(f.inv);
+    const rho = Math.hypot(tipV.x, tipV.z);
+    if (rho > f.r + 0.03) return;
+    const deficit = surfaceY(id, rho) + TIP_R - tipV.y;
+    if (deficit <= 0) return;
+    const k = rho < f.r - 0.02 ? 1 : 1 - (rho - (f.r - 0.02)) / 0.05;
+    st.pos.addScaledVector(f.n, deficit * k * k * (3 - 2 * k));
+  }
+  /** Catmull-Rom nas amostras do recorte i, na posição s (0..N-1). */
+  function sample(p, i, s) {
+    const N = plan.N, C = plan.C, base = i * N * C, k = Math.min(N - 2, Math.floor(s)), f = s - k;
+    const i0 = Math.max(0, k - 1), i3 = Math.min(N - 1, k + 2);
+    const f2 = f * f, f3 = f2 * f;
+    for (let c = 0; c < C; c++) {
+      const p0 = p[base + i0 * C + c], p1 = p[base + k * C + c], p2 = p[base + (k + 1) * C + c], p3 = p[base + i3 * C + c];
+      res[c] = 0.5 * (2 * p1 + (p2 - p0) * f + (2 * p0 - 5 * p1 + 4 * p2 - p3) * f2 + (3 * p1 - p0 - 3 * p2 + p3) * f3);
+    }
+  }
+  function planHand(limb, i, t) {
+    const p = plan.hands[limb], st = drive.stick[limb], g = skel.grip[limb];
+    const t0 = p.t0[i], t1 = p.t1[i], u = Math.min(1, Math.max(0, (t - t0) / (t1 - t0)));
+    const ca = configs[limb][p.a[i]], cb = configs[limb][p.b[i]];
+    const sig = minjerk(u);
+    sample(p.curves, i, unwarp(u, plan.warp) * (plan.N - 1));
+    baseP.lerpVectors(ca.hp0, cb.hp0, sig);
+    baseQ.slerpQuaternions(ca.hq0, cb.hq0, sig);
+    // frame de rumo: y pra cima, z pra trás do rumo da mão
+    fwd.set(0, 1, 0).applyQuaternion(baseQ).setY(0);
+    if (fwd.lengthSq() < 1e-8) fwd.set(0, 0, -1);
+    fwd.normalize();
+    back.copy(fwd).negate();
+    right.crossVectors(UP, back);
+    handP.copy(baseP).addScaledVector(right, res[0]).addScaledVector(UP, res[1]).addScaledVector(back, res[2]);
+    rv.set(res[3], res[4], res[5]);
+    const ang = rv.length();
+    if (ang > 1e-9) dq.setFromAxisAngle(rv.divideScalar(ang), ang); else dq.identity();
+    handQ.copy(baseQ).multiply(dq);
+    st.quat.copy(handQ).multiply(g.q);
+    st.pos.copy(g.f).applyQuaternion(handQ).add(handP);
+    // a baqueta nunca entra na peça que acabou de tocar nem na que vai tocar
+    guard(st, p.a[i]);
+    if (p.b[i] !== p.a[i]) guard(st, p.b[i]);
+    drive.swivel[limb] = ca.swivel + (cb.swivel - ca.swivel) * sig + res[6];
+    drive.clav[limb].elev = 0;
+    drive.clav[limb].prot = 0;
+    // os dedos apertam no golpe e soltam no meio
+    const edge = Math.min(u, 1 - u) * (t1 - t0);
+    drive.grip[limb] = Math.max(0, 1 - edge / 0.08);
+    arms[limb].dir.set(0, 1, 0).applyQuaternion(st.quat);
+  }
 
   // ---------- pose ----------
   const tmpV = new Vector3(), tmpK = new Vector3();
@@ -198,6 +281,10 @@ export function createRig() {
       drive.clav[limb].elev = WHIP_CLAV * hLead;
       drive.clav[limb].prot = 0;
       drive.grip[limb] = Math.max(0, 1 - s.h * 6);
+      if (plan) {
+        const i = segmentAt(plan, limb, t);
+        if (i >= 0) planHand(limb, i, t);
+      }
     }
 
     // pé direito: calcanhar parado no pedal, ponta desce junto com ele
@@ -250,5 +337,10 @@ export function createRig() {
     return out.set(0, SKEL.stickFront, 0).applyQuaternion(st.quat).add(st.pos);
   }
 
-  return { skel, drive, torso, arms, legs, configs, update, tip, TIP_R, X_AXIS };
+  return {
+    skel, drive, torso, arms, legs, configs, update, tip, TIP_R, X_AXIS,
+    /** Performance assada (perform.js) ou null pro modelo procedural. */
+    setPlan(p) { plan = p; },
+    get plan() { return plan; },
+  };
 }
