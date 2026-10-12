@@ -14,8 +14,7 @@ import {
   Bone, BufferAttribute, BufferGeometry, Group, Matrix4, Mesh, Quaternion, Skeleton, SkinnedMesh,
   Uint16BufferAttribute, Vector3,
 } from "../vendor/three.module.min.js";
-import { BODY } from "./layout.js";
-import { FEET, HANDS } from "./rig.js";
+import { FEET, HANDS } from "./skeleton.js";
 import { createCatBones } from "./catrig.js";
 import { S, SLOTS, catMeshData } from "./catdetails.js";
 import { CAT_PALETTES, plushMaterial, setSlot, setSlotEmissive } from "./felt.js";
@@ -180,7 +179,7 @@ export function createCat(rig, { palette = "laranja", onReady } = {}) {
 
   /** Debug: centro da bolinha da baqueta no mundo (depois do update). */
   function tipWorld(limb, out = new Vector3()) {
-    return out.copy(rig.arms[limb].dir).multiplyScalar(BODY.stickFront).add(rig.arms[limb].wrist);
+    return rig.tip(limb, out);
   }
 
   return api;

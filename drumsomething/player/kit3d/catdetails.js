@@ -7,8 +7,7 @@ import {
   BufferAttribute, BufferGeometry, LatheGeometry, Matrix4, OctahedronGeometry, Quaternion, SphereGeometry,
   TorusGeometry, Vector2, Vector3,
 } from "../vendor/three.module.min.js";
-import { BODY } from "./layout.js";
-import { FEET, HANDS } from "./rig.js";
+import { FEET, HANDS, SKEL } from "./skeleton.js";
 import { B, EARS, EYE_C, HEAD_SCALE as HS, SKULL } from "./catrig.js";
 import { catBody, projectToBody, rayToBody } from "./catbody.js";
 import { basis, ellipsoid as shapeEllipsoid, mergeSkinned, thread as shapeThread } from "./shapes.js";
@@ -156,13 +155,12 @@ export function buildDetails(body) {
 
   // ---------- patas: feijõezinhos e dedinhos costurados ----------
   for (const l of HANDS) {
-    const paw = bind[B[`pata${l}`]], bone = B[`pata${l}`];
+    const paw = bind[B[`pata${l}`]], bone = B[`pata${l}`], sx = l === "MD" ? 1 : -1;
     const pr = new Matrix4().extractRotation(paw);
-    const py = v3(0, 1, 0).applyMatrix4(pr);
-    const c = v3(0, 0.024, 0).applyMatrix4(paw); // centro da pata
-    const front = py.clone().multiplyScalar(0.35).add(v3(0, -0.45, -0.82)).normalize();
-    const side = new Vector3().crossVectors(front, py).normalize();
-    const up2 = new Vector3().crossVectors(side, front).normalize();
+    const py = v3(0, 1, 0).applyMatrix4(pr);              // pros dedos
+    const front = v3(0, 0, -1).applyMatrix4(pr);          // palma
+    const side = v3(1, 0, 0).applyMatrix4(pr);
+    const c = v3(-0.006 * sx, 0.06, -0.02).applyMatrix4(paw); // centro da pata
     const bean = (d, rx, ry, rz) => {
       const n = new Vector3();
       // começa logo fora da pata, pra cair na pata e não no braço
@@ -171,26 +169,31 @@ export function buildDetails(body) {
       parts.push({ geo: g, slot: S.bean, bone });
     };
     for (const [a, b] of [[-0.62, 0.42], [-0.21, 0.62], [0.21, 0.62], [0.62, 0.42]]) {
-      bean(front.clone().addScaledVector(side, a * 0.62).addScaledVector(up2, b * 0.7).normalize(), 0.0098, 0.009, 0.0055);
+      bean(front.clone().addScaledVector(side, a * 0.62).addScaledVector(py, b * 0.7).normalize(), 0.0098, 0.009, 0.0055);
     }
-    bean(front.clone().addScaledVector(up2, -0.32).normalize(), 0.018, 0.014, 0.007);
+    bean(front.clone().addScaledVector(py, -0.32).normalize(), 0.018, 0.014, 0.007);
     // dedinhos nas costas da pata
-    for (const sx of [-1, 1]) {
+    for (const k of [-1, 1]) {
       const pts = [0.15, 0.5, 0.85].map((a) => {
-        const d = py.clone().multiplyScalar(Math.sin(a + 0.6)).addScaledVector(front, -Math.cos(a + 0.6)).addScaledVector(side, sx * 0.2).normalize();
+        const d = py.clone().multiplyScalar(Math.sin(a + 0.6)).addScaledVector(front, -Math.cos(a + 0.6)).addScaledVector(side, k * 0.2).normalize();
         const n = new Vector3();
         return onBody(c.clone().addScaledVector(d, 0.1), n).addScaledVector(n, 0.0007);
       });
       parts.push({ geo: thread(pts, 0.0011), slot: S.thread, bone });
     }
   }
-  // pés: dedinhos costurados na frente
+  // pés: dedinhos costurados na frente (na parte da frente do pé, que dobra na planta)
+  const soleToFoot = (() => {
+    const o = v3(...SKEL.ankle), y = v3(...SKEL.ball).sub(o).normalize();
+    const x = v3(1, 0, 0).addScaledVector(y, -y.x).normalize();
+    return new Matrix4().makeBasis(x, y, new Vector3().crossVectors(x, y)).setPosition(o).invert();
+  })();
   for (const l of FEET) {
-    const foot = bind[B[`pe${l}`]], bone = B[`pe${l}`];
+    const sole = bind[B[`pe${l}`]].clone().multiply(soleToFoot), bone = B[`dedao${l}`];
     for (const sx of [-0.016, 0.016]) {
       const pts = [0.2, 0.55, 0.95].map((a) => {
         const n = new Vector3();
-        const q = v3(sx, 0.066 + Math.sin(a) * 0.06, -0.085 - Math.cos(a) * 0.15).applyMatrix4(foot);
+        const q = v3(sx, 0.066 + Math.sin(a) * 0.06, -0.085 - Math.cos(a) * 0.15).applyMatrix4(sole);
         return onBody(q, n).addScaledVector(n, 0.0007);
       });
       parts.push({ geo: thread(pts, 0.0012), slot: S.thread, bone });
@@ -267,12 +270,12 @@ export function buildDetails(body) {
 
   // ---------- baquetas (rígidas no pulso) ----------
   for (const l of HANDS) {
-    const len = BODY.stickFront + BODY.stickBack, r0 = 0.0085, r1 = 0.0062;
-    const pts = [[0, -BODY.stickBack - 0.004], [r0 * 0.7, -BODY.stickBack - 0.003], [r0, -BODY.stickBack + 0.002]];
-    for (let k = 1; k <= 6; k++) pts.push([r0 + (r1 - r0) * (k / 6), -BODY.stickBack + len * (k / 6)]);
-    pts.push([0, BODY.stickFront]);
+    const len = SKEL.stickFront + SKEL.stickBack, r0 = 0.0085, r1 = 0.0062;
+    const pts = [[0, -SKEL.stickBack - 0.004], [r0 * 0.7, -SKEL.stickBack - 0.003], [r0, -SKEL.stickBack + 0.002]];
+    for (let k = 1; k <= 6; k++) pts.push([r0 + (r1 - r0) * (k / 6), -SKEL.stickBack + len * (k / 6)]);
+    pts.push([0, SKEL.stickFront]);
     const shaft = new LatheGeometry(pts.map(([x, y]) => new Vector2(x, y)), 10);
-    const tip = new SphereGeometry(0.0085, 12, 8).translate(0, BODY.stickFront, 0);
+    const tip = new SphereGeometry(0.0085, 12, 8).translate(0, SKEL.stickFront, 0);
     for (const g of [shaft, tip]) {
       g.applyMatrix4(bind[B[`baqueta${l}`]]);
       parts.push({ geo: g, slot: S.stick, bone: B[`baqueta${l}`] });

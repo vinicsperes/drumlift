@@ -12,7 +12,7 @@
 
 import { Matrix4, Vector3 } from "../vendor/three.module.min.js";
 import { B, EARS, EAR, HEAD_SCALE, SKULL, createCatBones, sampleTail } from "./catrig.js";
-import { FEET, HANDS } from "./rig.js";
+import { FEET, HANDS, SKEL } from "./skeleton.js";
 import { TAIL_BONES } from "./plushmotion.js";
 import { dist, ellipsoid, flatCone, polygonize, roundCone, smin } from "./sdf.js";
 
@@ -30,6 +30,13 @@ function toLocal(m) {
   return Float64Array.of(e[0], e[4], e[8], e[12], e[1], e[5], e[9], e[13], e[2], e[6], e[10], e[14]);
 }
 const apply = (m, p) => p.clone().applyMatrix4(m);
+/** Matriz com origem o, y na direção de yDir e x o mais perto possível de xHint. */
+function frameAlong(o, yDir, xHint) {
+  const y = yDir.clone().normalize();
+  const x = xHint.clone().addScaledVector(y, -xHint.dot(y)).normalize();
+  const z = new Vector3().crossVectors(x, y);
+  return new Matrix4().makeBasis(x, y, z).setPosition(o);
+}
 
 /**
  * Formas do corpo na pose de ligação. Cada uma: { prim, bone, fur(p) } —
@@ -37,7 +44,11 @@ const apply = (m, p) => p.clone().applyMatrix4(m);
  */
 function buildShapes(bind, joints) {
   const shapes = [];
-  const torso = bind[B.pelve], head = bind[B.cabeca];
+  const head = bind[B.cabeca];
+  // frame do tronco inteiro (pelve, com y apontando pro pescoço): onde o
+  // desenho da pelagem do tronco é medido
+  const hipsX = v3(1, 0, 0).transformDirection(bind[B.pelve]);
+  const torso = frameAlong(joints.pelvis, joints.neck.clone().sub(joints.pelvis), hipsX);
   const torsoInv = torso.clone().invert(), headInv = head.clone().invert();
   // `group` = família de listras: dentro dela os desenhos casam, entre famílias as listras somem na emenda
   let group = "tronco";
@@ -85,49 +96,62 @@ function buildShapes(bind, joints) {
   const cream = () => [0, 1];
 
   // ---------- tronco ----------
-  const HIPS = add("quadril", ell(torso, v3(0, 0.055, 0.005), v3(0.192, 0.13, 0.166)), B.pelve, torsoFur);
-  const BELLY = add("barriga", ell(torso, v3(0, 0.15, -0.052), v3(0.172, 0.158, 0.148)), B.barriga, torsoFur);
-  const WAIST = add("cintura", ell(torso, v3(0, 0.262, 0), v3(0.17, 0.14, 0.134)), B.coluna, torsoFur);
-  const CHEST = add("peito", ell(torso, v3(0, 0.388, -0.006), v3(0.164, 0.13, 0.124)), B.peito, torsoFur);
-  const yokeA = apply(torso, v3(-0.13, 0.468, -0.02)), yokeB = apply(torso, v3(0.13, 0.468, -0.02));
-  const YOKE = add("ombros", roundCone(yokeA.toArray(), yokeB.toArray(), 0.07, 0.07), B.peito, torsoFur);
+  // cada parte no osso dela (pelve, lombar, torácica, peito); alturas a partir da pelve
+  const yS = SKEL.spine[1], yS1 = yS + SKEL.spine1[1], yC = yS1 + SKEL.chest[1];
+  const HIPS = add("quadril", ell(bind[B.pelve], v3(0, 0.055, 0.005), v3(0.192, 0.13, 0.166)), B.pelve, torsoFur);
+  const BELLY = add("barriga", ell(bind[B.lombar], v3(0, 0.15 - yS, -0.047), v3(0.172, 0.158, 0.148)), B.barriga, torsoFur);
+  const WAIST = add("cintura", ell(bind[B.coluna], v3(0, 0.262 - yS1, 0.005), v3(0.17, 0.14, 0.134)), B.coluna, torsoFur);
+  const CHEST = add("peito", ell(bind[B.peito], v3(0, 0.388 - yC, -0.001), v3(0.164, 0.13, 0.124)), B.peito, torsoFur);
+  // ombros: cada metade presa na clavícula do seu lado (o ombro avança e sobe com ela)
+  const yokeA = apply(bind[B.peito], v3(-0.13, 0.468 - yC, -0.015)), yokeB = apply(bind[B.peito], v3(0.13, 0.468 - yC, -0.015));
+  const yokeM = yokeA.clone().lerp(yokeB, 0.5);
+  const YOKE = add("ombros", roundCone(yokeA.toArray(), yokeM.toArray(), 0.07, 0.07), B.claviculaME, torsoFur);
+  const YOKE2 = add("ombros", roundCone(yokeM.toArray(), yokeB.toArray(), 0.07, 0.07), B.claviculaMD, torsoFur);
 
   // ---------- cabeça ----------
   group = "cabeca";
   const SKULL_I = add("cabeca", ell(head, SKULL.c, SKULL.r), B.cabeca, headFur);
   const CHEEKS = [-1, 1].map((s) => add("bochecha", ell(head, hs(0.06 * s, 0.06, -0.05), hs(0.08, 0.058, 0.07)), B.cabeca, headFur));
-  const core = [HIPS, BELLY, WAIST, CHEST, YOKE, SKULL_I, ...CHEEKS];
+  const core = [HIPS, BELLY, WAIST, CHEST, YOKE, YOKE2, SKULL_I, ...CHEEKS];
 
   // ---------- membros ----------
   const branches = [];
   for (const l of HANDS) {
-    const j = joints.arms[l], S = j.shoulder, E = j.elbow, W = j.wrist;
-    const M = S.clone().lerp(E, 0.45), lu = S.distanceTo(E);
+    const j = joints.arms[l], S = j.shoulder, E = j.elbow, W = j.wrist, sx = l === "MD" ? 1 : -1;
+    const M = S.clone().lerp(E, 0.45), F = E.clone().lerp(W, 0.5), lu = S.distanceTo(E);
     const paw = bind[B[`pata${l}`]];
+    // polegar: da base até a ponta, por cima da baqueta
+    const T0 = apply(bind[B[`polegar${l}`]], v3(0, 0, 0)), T1 = apply(bind[B[`polegar2${l}`]], v3(0, 0.034, 0));
     group = `braco${l}`;
     branches.push({
       name: `braco${l}`, k: 0.05, tau: 0.03, tauChain: 0.022,
       prims: [
         add("ombro", roundCone(S.toArray(), M.toArray(), 0.065, 0.059), B[`ombro${l}`], ringFur(S, E, 0.02, 0.066)),
         add("braco", roundCone(M.toArray(), E.toArray(), 0.059, 0.052), B[`braco${l}`], ringFur(S, E, 0.02, 0.066)),
-        add("antebraco", roundCone(E.toArray(), W.toArray(), 0.052, 0.045), B[`antebraco${l}`], ringFur(E, W, 0.02 + lu, 0.066)),
-        (group = `pata${l}`, add("pata", ell(paw, v3(0, 0.026, 0), v3(0.055, 0.065, 0.051)), B[`pata${l}`], cream)),
+        add("antebraco", roundCone(E.toArray(), F.toArray(), 0.052, 0.048), B[`antebraco${l}`], ringFur(E, W, 0.02 + lu, 0.066)),
+        add("antebraco", roundCone(F.toArray(), W.toArray(), 0.048, 0.044), B[`torcao${l}`], ringFur(E, W, 0.02 + lu, 0.066)),
+        // pata: luva fofa em volta da baqueta (a baqueta passa por dentro, do fulcro pro pé da mão)
+        (group = `pata${l}`, add("pata", ell(paw, v3(-0.006 * sx, 0.06, -0.02), v3(0.053, 0.066, 0.047)), B[`pata${l}`], cream)),
+        add("polegar", roundCone(T0.toArray(), T1.toArray(), 0.02, 0.016), B[`polegar2${l}`], cream),
       ],
-      ks: [0, 0.02, 0.03, 0.026],
+      ks: [0, 0.02, 0.03, 0.02, 0.026, 0.014],
     });
   }
+  // sola: frame do pé no plano do pedal (origem no calcanhar), a partir do osso do pé
+  const soleToFoot = frameAlong(v3(...SKEL.ankle), v3(...SKEL.ball).sub(v3(...SKEL.ankle)), v3(1, 0, 0));
   for (const l of FEET) {
     const j = joints.legs[l], H = j.hip, K = j.knee, A = j.ankle, lt = H.distanceTo(K);
-    const foot = bind[B[`pe${l}`]];
+    const sole = bind[B[`pe${l}`]].clone().multiply(soleToFoot.clone().invert());
     group = `perna${l}`;
     branches.push({
       name: `perna${l}`, k: 0.06, tau: 0.035, tauChain: 0.025,
       prims: [
         add("coxa", roundCone(H.toArray(), K.toArray(), 0.089, 0.07), B[`coxa${l}`], ringFur(H, K, 0, 0.075)),
         add("canela", roundCone(K.toArray(), A.toArray(), 0.068, 0.055), B[`canela${l}`], ringFur(K, A, lt, 0.075)),
-        (group = `pe${l}`, add("pe", ell(foot, v3(0, 0.066, -0.085), v3(0.056, 0.046, 0.125)), B[`pe${l}`], cream)),
+        (group = `pe${l}`, add("pe", ell(sole, v3(0, 0.066, -0.07), v3(0.056, 0.046, 0.11)), B[`pe${l}`], cream)),
+        add("pe", ell(sole, v3(0, 0.052, -0.175), v3(0.052, 0.036, 0.065)), B[`dedao${l}`], cream),
       ],
-      ks: [0, 0.03, 0.03],
+      ks: [0, 0.03, 0.03, 0.03],
     });
   }
   {
@@ -160,7 +184,7 @@ function buildShapes(bind, joints) {
   }
   const groups = [...new Set(shapes.map((sh) => sh.group))];
   for (const sh of shapes) sh.gi = groups.indexOf(sh.group);
-  return { shapes, core, branches, coreK: { HIPS, BELLY, WAIST, CHEST, YOKE, SKULL: SKULL_I, CHEEKS } };
+  return { shapes, core, branches, coreK: { HIPS, BELLY, WAIST, CHEST, YOKE, YOKE2, SKULL: SKULL_I, CHEEKS } };
 }
 
 /** Monta o campo (distância do corpo) e a função de pesos a partir das formas. */
@@ -172,7 +196,7 @@ function buildField(def) {
     let t = smin(d[c.HIPS], d[c.WAIST], 0.07);
     t = smin(t, d[c.CHEST], 0.07);
     t = smin(t, d[c.BELLY], 0.06);
-    t = smin(t, d[c.YOKE], 0.06);
+    t = smin(t, smin(d[c.YOKE], d[c.YOKE2], 0.02), 0.06);
     let h = smin(d[c.SKULL], d[c.CHEEKS[0]], 0.04);
     h = smin(h, d[c.CHEEKS[1]], 0.04);
     return smin(t, h, 0.055);

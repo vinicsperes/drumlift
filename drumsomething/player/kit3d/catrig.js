@@ -1,6 +1,9 @@
-// Ossos do gato de pelúcia. Quem decide a pose continua sendo o esqueleto de
-// rig.js (IK de ombro-cotovelo-pulso e quadril-joelho-tornozelo); aqui os
-// ossos só seguem essas juntas, e ganham a ação secundária de plushmotion.js.
+// Ossos do gato de pelúcia. Quem decide a pose é o esqueleto humano
+// (skeleton.js, guiado por rig.js): os ossos do gato são os mesmos, com os
+// mesmos índices, e ganham alguns a mais só dele: a cabeça de pelúcia (com
+// orelhas e olhos que piscam), a barriga que sacode, o rabo e um "ombro" sem
+// torção pro estofado entre o braço e o peito. A ação secundária vem de
+// plushmotion.js.
 //
 // A pose de ligação (onde a malha é gerada) é a pose sentada tocando, com as
 // duas mãos na caixa: braços dobrados pra frente, pés nos pedais. Assim a
@@ -8,25 +11,38 @@
 
 import { Euler, Matrix4, Quaternion, Vector3 } from "../vendor/three.module.min.js";
 import { createRig } from "./rig.js";
-import { FEET, HANDS } from "./rig.js";
+import { BONE as SK, BONES as SK_BONES, FEET, HANDS, SKEL } from "./skeleton.js";
 import { TAIL_BONES, catMotion } from "./plushmotion.js";
 
 const v3 = (x, y, z) => new Vector3(x, y, z);
 
 export const BONE_NAMES = [
-  "pelve", "coluna", "peito", "barriga", "cabeca", "orelhaE", "orelhaD", "olhos",
-  ...HANDS.flatMap((l) => [`ombro${l}`, `braco${l}`, `antebraco${l}`, `pata${l}`, `baqueta${l}`]),
-  ...FEET.flatMap((l) => [`coxa${l}`, `canela${l}`, `pe${l}`]),
+  ...SK_BONES,
+  ...HANDS.map((l) => `ombro${l}`),
+  "cabeca", "barriga", "orelhaE", "orelhaD", "olhos",
   ...Array.from({ length: TAIL_BONES }, (_, i) => `rabo${i}`),
 ];
 export const B = Object.fromEntries(BONE_NAMES.map((n, i) => [n, i]));
+// nomes do gato pros ossos do esqueleto
+Object.assign(B, { pelve: SK.hips, lombar: SK.spine, coluna: SK.spine1, peito: SK.chest });
+for (const l of HANDS) {
+  Object.assign(B, {
+    [`clavicula${l}`]: SK[`clav.${l}`], [`braco${l}`]: SK[`arm.${l}`], [`antebraco${l}`]: SK[`forearm.${l}`],
+    [`torcao${l}`]: SK[`twist.${l}`], [`pata${l}`]: SK[`hand.${l}`], [`baqueta${l}`]: SK[`stick.${l}`],
+    [`polegar${l}`]: SK[`thumb1.${l}`], [`polegar2${l}`]: SK[`thumb2.${l}`],
+    [`dedos${l}`]: SK[`middle1.${l}`], [`dedos2${l}`]: SK[`middle2.${l}`],
+  });
+}
+for (const l of FEET) Object.assign(B, { [`coxa${l}`]: SK[`thigh.${l}`], [`canela${l}`]: SK[`shin.${l}`], [`pe${l}`]: SK[`foot.${l}`], [`dedao${l}`]: SK[`toe.${l}`] });
 
 // ---------- medidas (m) ----------
-// No espaço do tronco (origem na pelve, igual a rig.torso):
-export const NECK = v3(0, 0.585, -0.03);  // pivô da cabeça
-export const HEAD_TILT = -0.11;           // olhando pra caixa
-export const BELLY_C = v3(0, 0.15, -0.09);
-// No espaço da cabeça (origem no pescoço, já inclinada). A cabeça é um pouco
+// A cabeça de pelúcia gira no alto do pescoço, um pouco abaixo da base do
+// crânio do esqueleto (o gato quase não tem pescoço).
+const HEAD_PIVOT = v3(0, -0.048, -0.018); // no espaço do osso "head"
+export const HEAD_TILT = 0.06;             // a cabeça do esqueleto já olha pra caixa
+// Barriga: centro no espaço da lombar.
+export const BELLY_C = v3(0, 0.055, -0.085);
+// No espaço da cabeça (origem no pivô, já inclinada). A cabeça é um pouco
 // maior que a de gente, como num bicho de pelúcia; o esqueleto não muda.
 export const HEAD_SCALE = 1.14;
 const hs = (x, y, z) => v3(x, y, z).multiplyScalar(HEAD_SCALE);
@@ -83,15 +99,6 @@ function frame(o, yDir, xHint, out) {
   return out.makeBasis(x, y, z).setPosition(o);
 }
 
-/** Tira a torção em volta de `axis` de uma rotação (fica só o "balanço"). */
-function swingOnly(q, axis, out) {
-  const p = axis.dot(new Vector3(q.x, q.y, q.z));
-  const twist = new Quaternion(axis.x * p, axis.y * p, axis.z * p, q.w);
-  if (twist.lengthSq() < 1e-12) return out.copy(q);
-  twist.normalize();
-  return out.copy(q).multiply(twist.invert());
-}
-
 /**
  * Cria os ossos do gato. `bones` são as matrizes de mundo (uma por osso);
  * `bind` as mesmas na pose de ligação; `joints` as juntas da pose de ligação.
@@ -103,37 +110,23 @@ export function createCatBones() {
   const bind = Array.from({ length: n }, () => new Matrix4());
 
   // tmp
-  const tA = new Vector3(), tB = new Vector3(), tC = new Vector3(), hinge = new Vector3();
-  const qA = new Quaternion(), qB = new Quaternion(), qC = new Quaternion();
+  const tA = new Vector3(), shoulder = new Vector3();
+  const qA = new Quaternion(), qB = new Quaternion(), qC = new Quaternion(), chestInv = new Quaternion();
   const mA = new Matrix4(), mB = new Matrix4(), mC = new Matrix4();
-  const torsoQ = new Quaternion(), bindTorsoQ = new Quaternion();
-  const pelvis = new Vector3();
   const eul = new Euler();
 
   // relações fixas medidas na pose de ligação
-  const bindLocal = { ua: {}, stickDirFA: {} }; // braço (no tronco) e baqueta (no antebraço)
-  const tailRel = [], tailLen = [];
+  const shoulderBind = {}; // braço no espaço do peito
+  const tailRel = [];
   let bound = false;
   const motion = { tail: new Float64Array(TAIL_BONES * 2) };
 
-  function limbHinge(a, b, c, fallback, out) {
-    tA.subVectors(b, a); tB.subVectors(c, b);
-    out.crossVectors(tA, tB);
-    if (out.lengthSq() < 1e-10) out.copy(fallback);
-    return out.normalize();
-  }
-
   function compute(rig, m) {
-    pelvis.copy(rig.torso.position);
-    torsoQ.copy(rig.torso.quaternion);
-    // pelve parada (é onde o gato senta)
-    bones[B.pelve].makeRotationFromQuaternion(bindTorsoQ).setPosition(pelvis);
-    // peito = tronco do esqueleto + um pouquinho de atraso no golpe
+    const sk = rig.skel.bones;
+    for (let i = 0; i < SK_BONES.length; i++) bones[i].copy(sk[i]);
+    // peito: um pouquinho de atraso no golpe (só o estofado; os braços já saíram do esqueleto)
     qA.setFromEuler(eul.set(m.chestPitch, 0, m.chestRoll, "XYZ"));
-    qB.copy(torsoQ).multiply(qA);
-    bones[B.peito].makeRotationFromQuaternion(qB).setPosition(pelvis);
-    qC.copy(bindTorsoQ).slerp(qB, 0.5);
-    bones[B.coluna].makeRotationFromQuaternion(qC).setPosition(pelvis);
+    bones[B.peito].multiply(mA.makeRotationFromQuaternion(qA));
     // barriga: sacode pra frente e balança um pouquinho em volta do centro
     // dela (só movimento rígido: o corpo usa skinning de quatérnio duplo)
     const j = m.belly;
@@ -141,11 +134,11 @@ export function createCatBones() {
     mA.makeTranslation(BELLY_C.x, BELLY_C.y - j * 0.4, BELLY_C.z - j)
       .multiply(mB.makeRotationFromQuaternion(qA))
       .multiply(mC.makeTranslation(-BELLY_C.x, -BELLY_C.y, -BELLY_C.z));
-    bones[B.barriga].multiplyMatrices(bones[B.coluna], mA);
-    // cabeça
+    bones[B.barriga].multiplyMatrices(bones[B.lombar], mA);
+    // cabeça de pelúcia: no alto do pescoço, seguindo a cabeça do esqueleto
     qA.setFromEuler(eul.set(HEAD_TILT + m.headPitch, m.headYaw, m.headRoll, "YXZ"));
-    mA.makeRotationFromQuaternion(qA).setPosition(NECK);
-    bones[B.cabeca].multiplyMatrices(bones[B.peito], mA);
+    mA.makeRotationFromQuaternion(qA).setPosition(HEAD_PIVOT);
+    bones[B.cabeca].multiplyMatrices(sk[SK.head], mA);
     EARS.forEach((e, k) => {
       qA.setFromAxisAngle(X, m.earPitch);
       qB.setFromAxisAngle(Z, -e.side * m.earRoll);
@@ -159,50 +152,21 @@ export function createCatBones() {
       .multiply(mC.makeTranslation(-ey.x, -ey.y, -ey.z));
     bones[B.olhos].multiplyMatrices(bones[B.cabeca], mA);
 
-    // braços
+    // ombro: só balança a partir da pose de ligação (sem torcer), relativo ao
+    // peito, pra o estofado entre braço e peito não torcer junto com o braço
+    const chestQ = qB.setFromRotationMatrix(bones[B.peito]);
+    chestInv.copy(chestQ).invert();
     for (const l of HANDS) {
-      const a = rig.arms[l];
-      const fb = tC.set(l === "MD" ? 1 : -1, -0.55, 0.35).normalize().applyQuaternion(torsoQ);
-      limbHinge(a.shoulder, a.elbow, a.wrist, fb, hinge);
-      const upper = tB.subVectors(a.elbow, a.shoulder).normalize().clone();
-      frame(a.shoulder, upper, hinge, bones[B[`braco${l}`]]);
-      frame(a.elbow, tA.subVectors(a.wrist, a.elbow), hinge, bones[B[`antebraco${l}`]]);
-      // ombro: só balança a partir da pose de ligação (sem torcer), relativo ao peito
-      const chestQ = qB.setFromRotationMatrix(bones[B.peito]);
+      const arm = sk[SK[`arm.${l}`]];
       if (bound) {
-        const yNow = upper.clone().applyQuaternion(chestQ.clone().invert());
-        qA.setFromUnitVectors(bindLocal.ua[l].y, yNow);
-        qC.copy(chestQ).multiply(qA).multiply(bindLocal.ua[l].q);
-        bones[B[`ombro${l}`]].makeRotationFromQuaternion(qC).setPosition(a.shoulder);
+        shoulder.setFromMatrixPosition(arm);
+        tA.setFromMatrixPosition(sk[SK[`forearm.${l}`]]).sub(shoulder).normalize().applyQuaternion(chestInv);
+        qA.setFromUnitVectors(shoulderBind[l].y, tA);
+        qC.copy(chestQ).multiply(qA).multiply(shoulderBind[l].q);
+        bones[B[`ombro${l}`]].makeRotationFromQuaternion(qC).setPosition(shoulder);
       } else {
-        bones[B[`ombro${l}`]].copy(bones[B[`braco${l}`]]);
+        bones[B[`ombro${l}`]].copy(arm);
       }
-      // pata: segue a baqueta pela metade, sem torcer em volta do antebraço
-      const fa = bones[B[`antebraco${l}`]];
-      const faQ = qA.setFromRotationMatrix(fa);
-      if (bound) {
-        const dNow = a.dir.clone().applyQuaternion(faQ.clone().invert());
-        qB.setFromUnitVectors(bindLocal.stickDirFA[l], dNow);
-        swingOnly(qB, Y, qC);
-        qC.slerp(qB.identity(), 0.45);
-        qB.copy(faQ).multiply(qC);
-        bones[B[`pata${l}`]].makeRotationFromQuaternion(qB).setPosition(a.wrist);
-      } else {
-        bones[B[`pata${l}`]].copy(fa).setPosition(a.wrist);
-      }
-      // baqueta: rígida no pulso, na direção do esqueleto
-      qA.setFromUnitVectors(Y, a.dir);
-      bones[B[`baqueta${l}`]].makeRotationFromQuaternion(qA).setPosition(a.wrist);
-    }
-
-    // pernas
-    for (const l of FEET) {
-      const g = rig.legs[l];
-      limbHinge(g.hip, g.knee, g.ankle, X, hinge);
-      frame(g.hip, tA.subVectors(g.knee, g.hip), hinge, bones[B[`coxa${l}`]]);
-      frame(g.knee, tA.subVectors(g.ankle, g.knee), hinge, bones[B[`canela${l}`]]);
-      g.foot.updateMatrixWorld(true);
-      bones[B[`pe${l}`]].copy(g.foot.matrixWorld);
     }
 
     // rabo: corrente presa na pelve
@@ -221,7 +185,6 @@ export function createCatBones() {
   // ---------- pose de ligação ----------
   const bindRig = createRig();
   bindRig.update(BIND_T, bindPrep(), 0);
-  bindTorsoQ.copy(bindRig.torso.quaternion);
   const zero = { chestPitch: 0, chestRoll: 0, headPitch: 0, headRoll: 0, headYaw: 0, earPitch: 0, earRoll: 0, belly: 0, blink: 0, tail: new Float64Array(TAIL_BONES * 2) };
   compute(bindRig, zero);
   // rabo na pose de ligação: um osso por trecho da curva amostrada
@@ -232,34 +195,33 @@ export function createCatBones() {
   for (let i = 0; i < TAIL_BONES; i++) {
     const parent = i === 0 ? bones[B.pelve] : bones[B.rabo0 + i - 1];
     tailRel.push(parent.clone().invert().multiply(bones[B.rabo0 + i]));
-    tailLen.push(tailPts[i + 1].distanceTo(tailPts[i]));
   }
   {
-    const chestQ = new Quaternion().setFromRotationMatrix(bones[B.peito]), inv = chestQ.clone().invert();
+    const inv = new Quaternion().setFromRotationMatrix(bones[B.peito]).invert();
+    const P = bindRig.skel.pos;
     for (const l of HANDS) {
-      const a = bindRig.arms[l];
-      const uaQ = new Quaternion().setFromRotationMatrix(bones[B[`braco${l}`]]);
-      bindLocal.ua[l] = {
-        y: a.elbow.clone().sub(a.shoulder).normalize().applyQuaternion(inv),
-        q: inv.clone().multiply(uaQ),
+      const armQ = new Quaternion().setFromRotationMatrix(bones[SK[`arm.${l}`]]);
+      shoulderBind[l] = {
+        y: P[SK[`forearm.${l}`]].clone().sub(P[SK[`arm.${l}`]]).normalize().applyQuaternion(inv),
+        q: inv.clone().multiply(armQ),
       };
-      const faQ = new Quaternion().setFromRotationMatrix(bones[B[`antebraco${l}`]]);
-      bindLocal.stickDirFA[l] = a.dir.clone().applyQuaternion(faQ.invert());
     }
   }
   bones.forEach((m, i) => bind[i].copy(m));
   bound = true;
 
+  const P = bindRig.skel.pos;
   const joints = {
-    pelvis: bindRig.torso.position.clone(),
-    arms: Object.fromEntries(HANDS.map((l) => {
-      const a = bindRig.arms[l];
-      return [l, { shoulder: a.shoulder.clone(), elbow: a.elbow.clone(), wrist: a.wrist.clone(), dir: a.dir.clone() }];
-    })),
-    legs: Object.fromEntries(FEET.map((l) => {
-      const g = bindRig.legs[l];
-      return [l, { hip: g.hip.clone(), knee: g.knee.clone(), ankle: g.ankle.clone() }];
-    })),
+    pelvis: P[SK.hips].clone(),
+    spine: P[SK.spine].clone(), spine1: P[SK.spine1].clone(), chest: P[SK.chest].clone(), neck: P[SK.neck].clone(),
+    arms: Object.fromEntries(HANDS.map((l) => [l, {
+      clavicle: P[SK[`clav.${l}`]].clone(), shoulder: P[SK[`arm.${l}`]].clone(), elbow: P[SK[`forearm.${l}`]].clone(),
+      wrist: P[SK[`hand.${l}`]].clone(), fulcrum: P[SK[`stick.${l}`]].clone(),
+    }])),
+    legs: Object.fromEntries(FEET.map((l) => [l, {
+      hip: P[SK[`thigh.${l}`]].clone(), knee: P[SK[`shin.${l}`]].clone(), ankle: P[SK[`foot.${l}`]].clone(),
+      ball: P[SK[`toe.${l}`]].clone(),
+    }])),
     tail: tailPts,
   };
 
@@ -300,3 +262,5 @@ export function sampleTail(n) {
   }
   return out;
 }
+
+export { SKEL };
