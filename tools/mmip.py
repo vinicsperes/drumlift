@@ -18,8 +18,10 @@ baterista com o real nota por nota.
 
 import argparse
 import json
+import re
 import ssl
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -72,6 +74,19 @@ def download(path: str, dest: Path) -> None:
         while chunk := r.read(1 << 20):
             f.write(chunk)
     tmp.rename(dest)
+
+
+def fbx_paths(path: str) -> list[str]:
+    """Caminho do FBX e, de reserva, o nome tirado da pasta: a lista da base às
+    vezes aponta pro arquivo de outra gravação (Drums_DD_MM_YY_HH_MM_SS ->
+    Drums_HH-MM-SS__20YY-MM-DD.fbx)."""
+    folder = path.rsplit("/", 1)[0]
+    m = re.search(r"Drums_(\d\d)_(\d\d)_(\d\d)_(\d\d)_(\d\d)_(\d\d)$", folder)
+    if not m:
+        return [path]
+    dd, mo, yy, hh, mi, ss = m.groups()
+    guess = f"{folder}/Drums_{hh}-{mi}-{ss}__20{yy}-{mo}-{dd}.fbx"
+    return [path] if guess == path else [path, guess]
 
 
 def midi_notes(path: Path) -> list[tuple[float, int, int]]:
@@ -160,7 +175,16 @@ def main() -> None:
         folder.mkdir(parents=True, exist_ok=True)
         d = x["Downloads"]
         print(f"[{i}] baixando...", flush=True)
-        download(d["FBX"], folder / "take.fbx")
+        for path in fbx_paths(d["FBX"]):
+            try:
+                download(path, folder / "take.fbx")
+                break
+            except urllib.error.HTTPError as e:
+                if e.code != 404:
+                    raise
+        if not (folder / "take.fbx").exists():
+            print(f"[{i}] o FBX não está no servidor, pulando", flush=True)
+            continue
         download(d["MIDI"], folder / "take.mid")
         download(d["AUDIO"], folder / "audio.wav")
         m = x["Music"]
