@@ -197,6 +197,11 @@ export function createRig() {
     arms[limb].dir.set(0, 1, 0).applyQuaternion(st.quat);
   }
 
+  // Centro da cabeça na postura de base (de onde o olhar mira os alvos).
+  const headRest = new Vector3(...SKEL.hips)
+    .add(new Vector3(0, SKEL.spine[1] + SKEL.spine1[1] + SKEL.chest[1] + SKEL.neck[1] + SKEL.head[1] + 0.09, 0)
+      .applyAxisAngle(X_AXIS, -BODY.leanBase * 0.6));
+
   // ---------- pose ----------
   const tmpV = new Vector3(), tmpK = new Vector3();
   const qLift = new Quaternion();
@@ -225,32 +230,11 @@ export function createRig() {
     return active * Math.pow(Math.sin(Math.PI * (ph < 0 ? ph + 1 : ph)), 2);
   }
 
-  /** Decide o comando de pose no tempo t (o "baterista" procedural). */
-  function perform(t, prep, press) {
+  /** Mãos no tempo t: baquetas, cotovelos e dedos (não dependem do corpo). */
+  function performHands(t, prep) {
     const limbs = prep.limbs;
     handState(limbs.MD, BODY.home.MD, t, arms.MD.state);
     handState(limbs.ME, BODY.home.ME, t, arms.ME.state);
-
-    // tronco: gira e inclina na direção das peças longe; balança de leve no tempo
-    let yaw = 0, lean = 0;
-    for (const limb of HANDS) {
-      const s = arms[limb].state, ra = reach(limb, s.a), rb = reach(limb, s.b);
-      yaw += REACH_K * (ra[0] + (rb[0] - ra[0]) * s.w);
-      lean += REACH_K * (ra[1] + (rb[1] - ra[1]) * s.w);
-    }
-    yaw = Math.max(-TORSO_LIMIT.yaw, Math.min(TORSO_LIMIT.yaw, yaw));
-    lean = Math.min(TORSO_LIMIT.lean, lean);
-    const active = activity(prep, t);
-    const phase = prep.clock.beatAt(t) % 1;
-    const pulse = active * (0.5 + 0.5 * Math.cos(2 * Math.PI * (phase - BOUNCE_PHASE)));
-    const pitch = BODY.leanBase + lean + TORSO_LIMIT.bob * pulse;
-    drive.hips.pos.set(pelvis.x, pelvis.y - BOUNCE * pulse, pelvis.z);
-    drive.hips.rot.set(-pitch * LEAN_SPLIT[0], yaw * YAW_SPLIT[0], 0);
-    for (let k = 0; k < 3; k++) drive.spine[k].set(-pitch * LEAN_SPLIT[k + 1], yaw * YAW_SPLIT[k + 1], 0);
-    // cabeça: compensa metade do giro e da inclinação, olhando pro kit
-    drive.neck.set(pitch * 0.35, -yaw * 0.25, 0);
-    drive.head.set(HEAD_DOWN + pitch * 0.25, -yaw * 0.2, 0);
-
     for (const limb of HANDS) {
       const arm = arms[limb], s = arm.state, st = drive.stick[limb];
       const ca = configs[limb][s.a] || configs[limb][BODY.home[limb]];
@@ -287,6 +271,40 @@ export function createRig() {
       }
     }
 
+  }
+
+  /**
+   * Corpo no tempo t: pelve, coluna, cabeça, clavículas e pés. Com o corpo
+   * assado (plan.body), os desvios vêm do baterista real (alcance, groove e
+   * olhar); sem ele, o tronco gira e balança pelas regras de antes.
+   */
+  function performBody(t, prep, press) {
+    const body = plan?.body;
+    // tronco: gira e inclina na direção das peças longe; balança de leve no tempo
+    let yaw = 0, lean = 0;
+    for (const limb of HANDS) {
+      const s = arms[limb].state, ra = reach(limb, s.a), rb = reach(limb, s.b);
+      yaw += REACH_K * (ra[0] + (rb[0] - ra[0]) * s.w);
+      lean += REACH_K * (ra[1] + (rb[1] - ra[1]) * s.w);
+    }
+    yaw = Math.max(-TORSO_LIMIT.yaw, Math.min(TORSO_LIMIT.yaw, yaw));
+    lean = Math.min(TORSO_LIMIT.lean, lean);
+    const active = activity(prep, t);
+    const phase = prep.clock.beatAt(t) % 1;
+    const pulse = active * (0.5 + 0.5 * Math.cos(2 * Math.PI * (phase - BOUNCE_PHASE)));
+    const pitch = BODY.leanBase + lean + TORSO_LIMIT.bob * pulse;
+    if (body) {
+      applyBody(body, t, BODY.leanBase + 0.5 * lean + BODY_BOUNCE * TORSO_LIMIT.bob * pulse);
+      drive.hips.pos.y -= BODY_BOUNCE * BOUNCE * pulse;
+    } else {
+      drive.hips.pos.set(pelvis.x, pelvis.y - BOUNCE * pulse, pelvis.z);
+      drive.hips.rot.set(-pitch * LEAN_SPLIT[0], yaw * YAW_SPLIT[0], 0);
+      for (let k = 0; k < 3; k++) drive.spine[k].set(-pitch * LEAN_SPLIT[k + 1], yaw * YAW_SPLIT[k + 1], 0);
+      // cabeça: compensa metade do giro e da inclinação, olhando pro kit
+      drive.neck.set(pitch * 0.35, -yaw * 0.25, 0);
+      drive.head.set(HEAD_DOWN + pitch * 0.25, -yaw * 0.2, 0);
+    }
+
     // pé direito: calcanhar parado no pedal, ponta desce junto com ele
     legs.PD.foot.rotation.x = pedalAngle(press);
     legs.PD.foot.updateMatrix();
@@ -300,6 +318,49 @@ export function createRig() {
     drive.foot.PE.heel = 0;
     drive.foot.PE.lift = HEEL_LIFT * heelPulse(prep, t, active);
   }
+
+  /** Desvios assados do corpo (8 juntas x 3 e a posição da pelve, frame do baterista) sobre a postura base. */
+  const bodyD = new Float32Array(32);
+  // Ganho dos desvios assados (o groove sai amostrado a 4 por tempo e perde um
+  // pouco do tremor; a pelve vem um pouco menos que na roupa de sensores) e o
+  // quique no pulso, que nos trechos reais aparece fraco.
+  const BODY_GAIN = 1.35, PELVIS_SWAY = 0.8, BODY_BOUNCE = 0.7;
+  function applyBody(body, t, pitch) {
+    const C = body.channels, n = body.delta.length / C, f = Math.max(0, t * body.fps);
+    const i = Math.min(n - 2, Math.floor(f)), u = Math.min(1, f - i);
+    for (let c = 0; c < C; c++) bodyD[c] = BODY_GAIN * (body.delta[i * C + c] * (1 - u) + body.delta[(i + 1) * C + c] * u);
+    const d = bodyD;
+    drive.hips.pos.copy(pelvis);
+    if (C >= 27) drive.hips.pos.add(tmpV.set(d[24], d[25], d[26]).multiplyScalar(PELVIS_SWAY));
+    drive.hips.rot.set(-pitch * LEAN_SPLIT[0] + d[0], d[1], d[2]);
+    for (let k = 0; k < 3; k++) drive.spine[k].set(-pitch * LEAN_SPLIT[k + 1] + d[3 + k * 3], d[4 + k * 3], d[5 + k * 3]);
+    drive.neck.set(pitch * 0.35 + d[12], d[13], d[14]);
+    drive.head.set(HEAD_DOWN + pitch * 0.25 + d[15], d[16], d[17]);
+    // clavículas: sobe = giro em volta do eixo pra trás, vai pra frente = em volta do vertical
+    drive.clav.MD.elev += d[20];
+    drive.clav.MD.prot += d[19];
+    drive.clav.ME.elev -= d[23];
+    drive.clav.ME.prot -= d[22];
+  }
+
+  /** Decide o comando de pose no tempo t. */
+  function perform(t, prep, press) {
+    performHands(t, prep);
+    performBody(t, prep, press);
+  }
+
+  /** Pulsos no tempo t (só as mãos; pra assar o corpo). */
+  const wq = new Quaternion(), wv = new Vector3();
+  function wrists(t, prep, outR, outL) {
+    performHands(t, prep);
+    HANDS.forEach((limb, k) => {
+      const st = drive.stick[limb], g = skel.grip[limb], out = k ? outL : outR;
+      wq.copy(st.quat).multiply(gInv[limb]);
+      wv.copy(g.f).applyQuaternion(wq);
+      out.x = st.pos.x - wv.x; out.y = st.pos.y - wv.y; out.z = st.pos.z - wv.z;
+    });
+  }
+  const gInv = { MD: skel.grip.MD.q.clone().invert(), ME: skel.grip.ME.q.clone().invert() };
 
   function sync() {
     const P = skel.pos;
@@ -341,6 +402,7 @@ export function createRig() {
     skel, drive, torso, arms, legs, configs, update, tip, TIP_R, X_AXIS,
     /** Performance assada (perform.js) ou null pro modelo procedural. */
     setPlan(p) { plan = p; },
+    wrists, headRest,
     get plan() { return plan; },
   };
 }

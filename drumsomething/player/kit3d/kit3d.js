@@ -270,9 +270,9 @@ export function mountKit3D(container, opts = {}) {
   function buildHere(msg) {
     setTimeout(async () => {
       try {
-        const [{ loadMoves }, { buildPlan }] = await Promise.all([import("./moves.js"), import("./perform.js")]);
+        const [{ loadMoves }, { buildPlan }, { createRig }] = await Promise.all([import("./moves.js"), import("./perform.js"), import("./rig.js")]);
         const lib = await loadMoves(msg.url);
-        applyPlan({ id: msg.id, plan: buildPlan(prepareSong(msg.song), lib) });
+        applyPlan({ id: msg.id, plan: buildPlan(prepareSong(msg.song), lib, { rigFactory: createRig }) });
       } catch (err) {
         applyPlan({ id: msg.id, error: String(err?.message || err) });
       }
