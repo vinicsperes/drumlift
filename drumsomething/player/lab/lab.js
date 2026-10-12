@@ -210,21 +210,18 @@ function trackFromReal(S, sk) {
 function trackFromOurs(view, duration) {
   const n = Math.floor(duration * FPS), arr = () => new Float32Array(n * 3);
   const tr = { fps: FPS, n, tip: [arr(), arr()], wrist: [arr(), arr()], elbow: [arr(), arr()], chest: arr(), head: arr(), strokes: [[], []] };
-  const dbg = view._debug, rig = dbg.rig;
-  const c = new Vector3(), hd = new Vector3();
+  const dbg = view._debug;
   for (let i = 0; i < n; i++) {
     dbg.pose(i / FPS);
+    const rig = dbg.rig, P = rig.skel.pos, at = (name) => P[rig.skel.bone[name]];
     ["MD", "ME"].forEach((l, h) => {
       put(tr.tip[h], i, dbg.avatar.tipWorld(l));
       put(tr.wrist[h], i, rig.arms[l].wrist);
       put(tr.elbow[h], i, rig.arms[l].elbow);
     });
-    c.set(0, 0.42, -0.02);
-    rig.torso.localToWorld(c);
-    put(tr.chest, i, c);
-    hd.set(0, 0.71, -0.03);
-    rig.torso.localToWorld(hd);
-    put(tr.head, i, hd);
+    // mesmas juntas do real: peito (Spine3) e base do crânio (Head)
+    put(tr.chest, i, at("chest"));
+    put(tr.head, i, at("head"));
   }
   const prep = dbg.prep;
   ["MD", "ME"].forEach((l, h) => { tr.strokes[h] = prep.limbs[l].map((s) => ({ t: s.t, vel: s.vel, inst: s.inst })); });
