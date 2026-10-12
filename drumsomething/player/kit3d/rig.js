@@ -12,7 +12,7 @@
 import { Matrix4, Object3D, Quaternion, Vector3 } from "../vendor/three.module.min.js";
 import { BODY, CYMBALS, DRUMS, HIHAT_PEDAL, KICK_PEDAL, TORSO_LIMIT, TORSO_REACH } from "./layout.js";
 import { contact, pedalAngle, placeFrame, strikeAngle, surfaceY } from "./pieces.js";
-import { handState } from "./motion.js";
+import { handState, hihatFoot } from "./motion.js";
 import { BONE, FEET, HANDS, SKEL, createDrive, createSkeleton } from "./skeleton.js";
 import { segmentAt } from "./perform.js";
 import { unwarp } from "./moves.js";
@@ -42,6 +42,10 @@ const BOUNCE = 0.007;      // m
 const BOUNCE_PHASE = 0.28;
 // Pé esquerdo: o calcanhar marca o pulso com a ponta parada no pedal do chimbal.
 const HEEL_LIFT = 0.16;    // rad no meio do tempo
+// Bumbo de calcanhar levantado: o calcanhar fica no ar e sobe mais com o pedal solto.
+const HEEL_UP = 0.3;       // rad
+const HEEL_STOMP = 0.22;   // rad a mais com o pedal solto (a perna "carrega" o golpe)
+const HEEL_WIN = 1.5;      // s: janela da força média dos bumbos
 // Como o tronco se divide pelas vértebras (pelve, lombar, torácica, peito).
 const YAW_SPLIT = [0.15, 0.25, 0.3, 0.3];
 const LEAN_SPLIT = [0.25, 0.3, 0.3, 0.15];
@@ -223,12 +227,6 @@ export function createRig() {
     }
     return active;
   }
-  /** Calcanhar esquerdo (0..1): sobe no meio de cada tempo e desce na batida. */
-  function heelPulse(prep, t, active) {
-    if (active <= 0) return 0;
-    const ph = prep.clock.beatAt(t) % 1;
-    return active * Math.pow(Math.sin(Math.PI * (ph < 0 ? ph + 1 : ph)), 2);
-  }
 
   /** Mãos no tempo t: baquetas, cotovelos e dedos (não dependem do corpo). */
   function performHands(t, prep) {
@@ -265,10 +263,10 @@ export function createRig() {
       drive.clav[limb].elev = WHIP_CLAV * hLead;
       drive.clav[limb].prot = 0;
       drive.grip[limb] = Math.max(0, 1 - s.h * 6);
-      if (plan) {
-        const i = segmentAt(plan, limb, t);
-        if (i >= 0) planHand(limb, i, t);
-      }
+      const seg = plan ? segmentAt(plan, limb, t) : -1;
+      lapW[limb] = 0;
+      if (seg >= 0) planHand(limb, seg, t);
+      else rest(limb, limbs[limb], t);
     }
 
   }
@@ -294,7 +292,9 @@ export function createRig() {
     const pulse = active * (0.5 + 0.5 * Math.cos(2 * Math.PI * (phase - BOUNCE_PHASE)));
     const pitch = BODY.leanBase + lean + TORSO_LIMIT.bob * pulse;
     if (body) {
-      applyBody(body, t, BODY.leanBase + 0.5 * lean + BODY_BOUNCE * TORSO_LIMIT.bob * pulse);
+      // parado, o corpo sossega (menos groove) e, com as baquetas nas coxas, recosta um pouco
+      const rested = 0.5 * (lapW.MD + lapW.ME);
+      applyBody(body, t, BODY.leanBase * (1 - 0.6 * rested) + 0.5 * lean + BODY_BOUNCE * TORSO_LIMIT.bob * pulse, 0.35 + 0.65 * active);
       drive.hips.pos.y -= BODY_BOUNCE * BOUNCE * pulse;
     } else {
       drive.hips.pos.set(pelvis.x, pelvis.y - BOUNCE * pulse, pelvis.z);
@@ -305,19 +305,41 @@ export function createRig() {
       drive.head.set(HEAD_DOWN + pitch * 0.25, -yaw * 0.2, 0);
     }
 
-    // pé direito: calcanhar parado no pedal, ponta desce junto com ele
+    // pé direito: nas partes fortes toca de calcanhar levantado (a perna toda
+    // sobe e cai no pedal, a planta do pé fica na prancha); nas leves e paradas,
+    // de calcanhar no pedal, só o tornozelo
+    const up = heelUp(prep, t);
     legs.PD.foot.rotation.x = pedalAngle(press);
     legs.PD.foot.updateMatrix();
     drive.foot.PD.board.copy(legs.PD.foot.matrix);
     drive.foot.PD.heel = 0;
-    drive.foot.PD.lift = 0;
-    // pé esquerdo: a ponta fica no pedal do chimbal e o calcanhar sobe e desce
-    legs.PE.foot.rotation.x = HIHAT_PEDAL.angle;
+    drive.foot.PD.lift = up * (HEEL_UP + HEEL_STOMP * (1 - press));
+    // pé esquerdo: segura o chimbal fechado (calcanhar marcando o tempo) ou faz o "chick"
+    hihatFoot(prep, t, hh);
+    legs.PE.foot.rotation.x = HIHAT_PEDAL.angle - HIHAT_PEDAL.travel * hh.press;
     legs.PE.foot.updateMatrix();
     drive.foot.PE.board.copy(legs.PE.foot.matrix);
     drive.foot.PE.heel = 0;
-    drive.foot.PE.lift = HEEL_LIFT * heelPulse(prep, t, active);
+    drive.foot.PE.lift = HEEL_LIFT * hh.tap;
   }
+
+  /** Quanto o bumbo está sendo tocado de calcanhar levantado (0..1): força média dos bumbos em volta. */
+  function heelUp(prep, t) {
+    const hits = prep.limbs.PD;
+    if (!hits.length) return 0;
+    let lo = 0, hi = hits.length;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (hits[m].t < t - HEEL_WIN) lo = m + 1; else hi = m; }
+    let sum = 0, wsum = 0;
+    for (let j = lo; j < hits.length && hits[j].t <= t + HEEL_WIN; j++) {
+      const w = 1 - Math.abs(hits[j].t - t) / HEEL_WIN;
+      sum += w * hits[j].vel;
+      wsum += w;
+    }
+    if (wsum <= 0) return 0;
+    const v = sum / wsum, k = Math.min(1, Math.max(0, (v - 0.5) / 0.25));
+    return k * k * (3 - 2 * k) * Math.min(1, wsum);
+  }
+  const hh = { press: 0, tap: 0 };
 
   /** Desvios assados do corpo (8 juntas x 3 e a posição da pelve, frame do baterista) sobre a postura base. */
   const bodyD = new Float32Array(32);
@@ -325,10 +347,10 @@ export function createRig() {
   // pouco do tremor; a pelve vem um pouco menos que na roupa de sensores) e o
   // quique no pulso, que nos trechos reais aparece fraco.
   const BODY_GAIN = 1.35, PELVIS_SWAY = 0.8, BODY_BOUNCE = 0.7;
-  function applyBody(body, t, pitch) {
+  function applyBody(body, t, pitch, gain = 1) {
     const C = body.channels, n = body.delta.length / C, f = Math.max(0, t * body.fps);
-    const i = Math.min(n - 2, Math.floor(f)), u = Math.min(1, f - i);
-    for (let c = 0; c < C; c++) bodyD[c] = BODY_GAIN * (body.delta[i * C + c] * (1 - u) + body.delta[(i + 1) * C + c] * u);
+    const i = Math.min(n - 2, Math.floor(f)), u = Math.min(1, f - i), k = BODY_GAIN * gain;
+    for (let c = 0; c < C; c++) bodyD[c] = k * (body.delta[i * C + c] * (1 - u) + body.delta[(i + 1) * C + c] * u);
     const d = bodyD;
     drive.hips.pos.copy(pelvis);
     if (C >= 27) drive.hips.pos.add(tmpV.set(d[24], d[25], d[26]).multiplyScalar(PELVIS_SWAY));
@@ -341,6 +363,46 @@ export function createRig() {
     drive.clav.MD.prot += d[19];
     drive.clav.ME.elev -= d[23];
     drive.clav.ME.prot -= d[22];
+  }
+
+  /**
+   * Mão sem golpe por perto: parada no ar ela respira (deriva lenta de poucos
+   * centímetros); numa pausa longa as baquetas descansam nas coxas e voltam
+   * antes da entrada. Perto das notas não mexe em nada (o golpe continua exato).
+   */
+  const lapQ = {}, lapP = {};
+  for (const limb of HANDS) {
+    const sx = limb === "MD" ? 1 : -1;
+    lapP[limb] = new Vector3(0.13 * sx, 0.655, -0.02);
+    lapQ[limb] = stickQuat(new Vector3(-0.55 * sx, -0.08, -0.83), deg(55) * sx);
+  }
+  const restV = new Vector3();
+  const lapW = { MD: 0, ME: 0 };
+  function rest(limb, hits, t) {
+    lapW[limb] = 0;
+    const st = drive.stick[limb];
+    let lo = 0, hi = hits.length;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (hits[m].t <= t) lo = m + 1; else hi = m; }
+    const since = lo > 0 ? t - hits[lo - 1].t : Infinity, until = lo < hits.length ? hits[lo].t - t : Infinity;
+    const sm = (a, b, x) => { const u = Math.min(1, Math.max(0, (x - a) / (b - a))); return u * u * (3 - 2 * u); };
+    // respiração: some perto das notas
+    const idle = sm(0.45, 1.1, since) * sm(0.55, 1.1, until);
+    if (idle > 0) {
+      const ph = limb === "MD" ? 0 : 1.7;
+      restV.set(0.008 * Math.sin(2 * Math.PI * t / 3.7 + ph), 0.011 * Math.sin(2 * Math.PI * t / 4.3 + ph * 0.6) - 0.012,
+        0.007 * Math.sin(2 * Math.PI * t / 5.3 + ph * 1.3));
+      st.pos.addScaledVector(restV, idle);
+    }
+    // pausa longa: baquetas nas coxas
+    const lap = sm(0.7, 1.8, since) * sm(1.2, 2.2, until);
+    lapW[limb] = lap;
+    if (lap > 0) {
+      st.pos.lerp(lapP[limb], lap);
+      st.quat.slerp(lapQ[limb], lap);
+      drive.swivel[limb] += (0.18 - drive.swivel[limb]) * lap;
+      drive.grip[limb] *= 1 - lap;
+      arms[limb].dir.set(0, 1, 0).applyQuaternion(st.quat);
+    }
   }
 
   /** Decide o comando de pose no tempo t. */
