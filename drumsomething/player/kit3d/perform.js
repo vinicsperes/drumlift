@@ -31,11 +31,13 @@ export function buildPlan(prep, lib, { rigFactory } = {}) {
   const t0 = performance.now();
   const N = lib.N, C = lib.C, D = N * C;
   const plan = { N, C, warp: lib.warp, hands: {}, stats: {} };
-  const tmp = new Float32Array(D);
+  const tmp = new Float32Array(D), cand = new Float32Array(D);
+  // com o esqueleto em mãos, cada candidato é testado no nosso kit antes de ser escolhido
+  const rig = rigFactory ? rigFactory() : null;
   for (const h of HANDS) {
     const hits = prep.limbs[h] || [];
     const t0s = [], t1s = [], as = [], bs = [], curves = [];
-    let last = -1, used = 0;
+    let last = -1, used = 0, rejected = 0;
     for (let k = 0; k + 1 < hits.length; k++) {
       const A = hits[k], B = hits[k + 1], g = B.t - A.t;
       if (g < lib.gap[0] || g > lib.gap[1] || !lib.insts.includes(A.inst) || !lib.insts.includes(B.inst)) continue;
@@ -44,32 +46,46 @@ export function buildPlan(prep, lib, { rigFactory } = {}) {
         gp: k ? A.t - hits[k - 1].t : lib.gap[1], gn: k + 2 < hits.length ? hits[k + 2].t - B.t : lib.gap[1],
         beat: prep.clock.beatLen(A.t),
       };
-      const best = matchMoves(lib, h, q);
+      const best = matchMoves(lib, h, q, rig ? 12 : 6);
       if (!best.length) continue;
+      const H = lib.hands[h];
+      // força: a preparação acompanha (de leve) a nota de chegada, que no recorte pode ser outra
+      const k2Of = (i) => Math.min(1.3, Math.max(0.75, Math.sqrt(want(q.vb) / want(H.vb[i] / 255))));
+      const scaled = (i, out) => {
+        curveOf(lib, h, i, tmp);
+        const k2 = k2Of(i);
+        for (let j = 0; j < D; j++) out[j] = tmp[j] * (j % C === C - 1 ? Math.sqrt(k2) : k2);
+        return out;
+      };
+      // física: o recorte não pode atravessar nenhuma peça, nem mergulhar abaixo
+      // das duas peças do golpe (no kit da captura as alturas eram outras)
+      if (rig) {
+        for (const c of best) {
+          const r = rig.curveClearance(h, A.inst, B.inst, scaled(c[1], cand), 0, N, C, lib.warp);
+          const pen = Math.max(0, -r.clear) + Math.max(0, 0.42 - r.low) + Math.max(0, r.dip - 0.06);
+          if (pen > 0.008) c[0] += 2 + 40 * pen;
+        }
+      }
       // sorteio entre os melhores, com peso pra quem está mais perto
       for (const c of best) if (c[1] === last) c[0] += REPEAT_PENALTY;
       best.sort((x, y) => x[0] - y[0]);
-      const ws = best.map(([d]) => Math.exp(-(d - best[0][0]) / 0.12));
-      let r = hash(k, h === "MD" ? 1 : 2) * ws.reduce((s, x) => s + x, 0), pick = best[0][1];
-      for (let j = 0; j < best.length; j++) { r -= ws[j]; if (r <= 0) { pick = best[j][1]; break; } }
+      const top = best.slice(0, 6);
+      const ws = top.map(([d]) => Math.exp(-(d - top[0][0]) / 0.12));
+      let r = hash(k, h === "MD" ? 1 : 2) * ws.reduce((s, x) => s + x, 0), pick = top[0][1];
+      for (let j = 0; j < top.length; j++) { r -= ws[j]; if (r <= 0) { pick = top[j][1]; break; } }
+      if (best[0][0] > 2) rejected++;
       last = pick;
-      curveOf(lib, h, pick, tmp);
-      // força: a preparação acompanha a nota de chegada (a do recorte pode ser outra)
-      const H = lib.hands[h];
-      const k2 = Math.min(1.5, Math.max(0.65, want(q.vb) / want(H.vb[pick] / 255)));
-      const curve = new Float32Array(D);
-      for (let j = 0; j < D; j++) curve[j] = tmp[j] * (j % C === C - 1 ? Math.sqrt(k2) : k2);
+      const curve = scaled(pick, new Float32Array(D));
       t0s.push(A.t); t1s.push(B.t); as.push(A.inst); bs.push(B.inst); curves.push(curve);
       used++;
     }
     const n = t0s.length, flat = new Float32Array(n * D);
     curves.forEach((c, i) => flat.set(c, i * D));
     plan.hands[h] = { t0: Float64Array.from(t0s), t1: Float64Array.from(t1s), a: as, b: bs, curves: flat };
-    plan.stats[h] = { hits: hits.length, covered: used };
+    plan.stats[h] = { hits: hits.length, covered: used, noClean: rejected };
   }
-  if (lib.body && rigFactory && prep.duration > 0) {
+  if (lib.body && rig && prep.duration > 0) {
     const t1 = performance.now();
-    const rig = rigFactory();
     rig.setPlan(plan);
     plan.body = bakeBody(prep, lib, rig);
     plan.stats.bodyMs = performance.now() - t1;

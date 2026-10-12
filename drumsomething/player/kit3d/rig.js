@@ -136,6 +136,8 @@ export function createRig() {
   const baseP = new Vector3(), baseQ = new Quaternion(), handP = new Vector3(), handQ = new Quaternion();
   const fwd = new Vector3(), back = new Vector3(), right = new Vector3(), rv = new Vector3(), dq = new Quaternion();
   const tipV = new Vector3();
+  const SHALLOW = 0.05; // m: até onde a trava das peças do caminho age
+  const SWIVEL_RES = 0.5;
   const minjerk = (u) => u * u * u * (10 - 15 * u + 6 * u * u);
   // frame de cada peça (origem no centro da superfície de golpe, y = normal)
   const pieceFrames = {};
@@ -144,17 +146,21 @@ export function createRig() {
     for (const id of HAND_TARGETS) {
       placeFrame(id, o);
       const r = (DRUMS[id] || CYMBALS[id]).r;
-      pieceFrames[id] = { inv: o.matrix.clone().invert(), n: new Vector3(0, 1, 0).applyQuaternion(o.quaternion), r };
+      pieceFrames[id] = { inv: o.matrix.clone().invert(), n: new Vector3(0, 1, 0).applyQuaternion(o.quaternion), r, depth: DRUMS[id]?.depth || 0 };
     }
   }
-  /** Empurra a baqueta pra fora da peça se a ponta estiver dentro dela (some suave na borda). */
-  function guard(st, id) {
+  /**
+   * Empurra a baqueta pra fora da peça se a ponta estiver dentro dela (some
+   * suave na borda). Com `depth`, só se ela entrou até essa profundidade (abaixo
+   * disso, a ponta está do lado ou embaixo da peça, não passando por cima).
+   */
+  function guard(st, id, depth = Infinity) {
     const f = pieceFrames[id];
     tipV.set(0, SKEL.stickFront, 0).applyQuaternion(st.quat).add(st.pos).applyMatrix4(f.inv);
     const rho = Math.hypot(tipV.x, tipV.z);
     if (rho > f.r + 0.03) return;
     const deficit = surfaceY(id, rho) + TIP_R - tipV.y;
-    if (deficit <= 0) return;
+    if (deficit <= 0 || deficit > depth) return;
     const k = rho < f.r - 0.02 ? 1 : 1 - (rho - (f.r - 0.02)) / 0.05;
     st.pos.addScaledVector(f.n, deficit * k * k * (3 - 2 * k));
   }
@@ -168,12 +174,8 @@ export function createRig() {
       res[c] = 0.5 * (2 * p1 + (p2 - p0) * f + (2 * p0 - 5 * p1 + 4 * p2 - p3) * f2 + (3 * p1 - p0 - 3 * p2 + p3) * f3);
     }
   }
-  function planHand(limb, i, t) {
-    const p = plan.hands[limb], st = drive.stick[limb], g = skel.grip[limb];
-    const t0 = p.t0[i], t1 = p.t1[i], u = Math.min(1, Math.max(0, (t - t0) / (t1 - t0)));
-    const ca = configs[limb][p.a[i]], cb = configs[limb][p.b[i]];
-    const sig = minjerk(u);
-    sample(p.curves, i, unwarp(u, plan.warp) * (plan.N - 1));
+  /** Mão (handP, handQ) entre duas poses de golpe, no ponto sig do caminho, com o resíduo r. */
+  function handFromResidual(ca, cb, sig, r) {
     baseP.lerpVectors(ca.hp0, cb.hp0, sig);
     baseQ.slerpQuaternions(ca.hq0, cb.hq0, sig);
     // frame de rumo: y pra cima, z pra trás do rumo da mão
@@ -182,17 +184,62 @@ export function createRig() {
     fwd.normalize();
     back.copy(fwd).negate();
     right.crossVectors(UP, back);
-    handP.copy(baseP).addScaledVector(right, res[0]).addScaledVector(UP, res[1]).addScaledVector(back, res[2]);
-    rv.set(res[3], res[4], res[5]);
+    handP.copy(baseP).addScaledVector(right, r[0]).addScaledVector(UP, r[1]).addScaledVector(back, r[2]);
+    rv.set(r[3], r[4], r[5]);
     const ang = rv.length();
     if (ang > 1e-9) dq.setFromAxisAngle(rv.divideScalar(ang), ang); else dq.identity();
     handQ.copy(baseQ).multiply(dq);
+  }
+
+  /**
+   * Quanto um recorte, posto no nosso kit entre as peças a e b, chega perto de
+   * atravessar alguma peça (m; negativo = entra), a altura mais baixa da ponta e
+   * quanto ela mergulha abaixo das duas peças do golpe.
+   * O plano usa isso pra descartar recortes que não cabem no nosso kit.
+   */
+  const curveR = new Float32Array(8), ctip = new Vector3();
+  function curveClearance(limb, a, b, curve, off, N, C, w) {
+    const ca = configs[limb][a], cb = configs[limb][b], g = skel.grip[limb];
+    let clear = Infinity, low = Infinity;
+    for (let k = 1; k < N - 1; k++) {
+      const u = k / (N - 1) - (w * Math.sin(2 * Math.PI * k / (N - 1))) / (2 * Math.PI);
+      for (let c = 0; c < C; c++) curveR[c] = curve[off + k * C + c];
+      handFromResidual(ca, cb, minjerk(u), curveR);
+      ctip.set(0, SKEL.stickFront, 0).applyQuaternion(g.q).add(g.f).applyQuaternion(handQ).add(handP);
+      low = Math.min(low, ctip.y);
+      for (const id of HAND_TARGETS) {
+        if (id === a || id === b) continue; // essas a trava resolve na hora
+        const f = pieceFrames[id];
+        tipV.copy(ctip).applyMatrix4(f.inv);
+        const rho = Math.hypot(tipV.x, tipV.z);
+        if (rho > f.r) continue;
+        const top = surfaceY(id, rho) + TIP_R;
+        // tambor: o corpo todo; prato: uma camada fina
+        const bottom = f.depth ? -f.depth : top - 0.025;
+        if (tipV.y > bottom) clear = Math.min(clear, tipV.y - top);
+      }
+    }
+    // mergulho: quanto a ponta desce abaixo da mais baixa das duas peças
+    return { clear, low, dip: Math.min(ca.tip.y, cb.tip.y) - low };
+  }
+
+  function planHand(limb, i, t) {
+    const p = plan.hands[limb], st = drive.stick[limb], g = skel.grip[limb];
+    const t0 = p.t0[i], t1 = p.t1[i], u = Math.min(1, Math.max(0, (t - t0) / (t1 - t0)));
+    const ca = configs[limb][p.a[i]], cb = configs[limb][p.b[i]];
+    const sig = minjerk(u);
+    sample(p.curves, i, unwarp(u, plan.warp) * (plan.N - 1));
+    handFromResidual(ca, cb, sig, res);
     st.quat.copy(handQ).multiply(g.q);
     st.pos.copy(g.f).applyQuaternion(handQ).add(handP);
-    // a baqueta nunca entra na peça que acabou de tocar nem na que vai tocar
-    guard(st, p.a[i]);
-    if (p.b[i] !== p.a[i]) guard(st, p.b[i]);
-    drive.swivel[limb] = ca.swivel + (cb.swivel - ca.swivel) * sig + res[6];
+    // a baqueta nunca entra na peça que acabou de tocar nem na que vai tocar, e
+    // passa por cima das outras (no caminho entre duas peças, por cima do aro)
+    for (const id of HAND_TARGETS) {
+      if (id === p.a[i] || id === p.b[i]) guard(st, id);
+      else guard(st, id, SHALLOW);
+    }
+    // o cotovelo do nosso braço (proporções de boneco) já se mexe mais com a mão: metade do giro gravado
+    drive.swivel[limb] = ca.swivel + (cb.swivel - ca.swivel) * sig + SWIVEL_RES * res[6];
     drive.clav[limb].elev = 0;
     drive.clav[limb].prot = 0;
     // os dedos apertam no golpe e soltam no meio
@@ -295,6 +342,9 @@ export function createRig() {
       // parado, o corpo sossega (menos groove) e, com as baquetas nas coxas, recosta um pouco
       const rested = 0.5 * (lapW.MD + lapW.ME);
       applyBody(body, t, BODY.leanBase * (1 - 0.6 * rested) + 0.5 * lean + BODY_BOUNCE * TORSO_LIMIT.bob * pulse, 0.35 + 0.65 * active);
+      // metade do giro das regras de antes por cima: o nosso kit é mais aberto
+      // que o da captura, e sem isso a mão direita não chega no prato de ataque
+      for (let k = 0; k < 4; k++) (k ? drive.spine[k - 1] : drive.hips.rot).y += 0.5 * yaw * YAW_SPLIT[k];
       drive.hips.pos.y -= BODY_BOUNCE * BOUNCE * pulse;
     } else {
       drive.hips.pos.set(pelvis.x, pelvis.y - BOUNCE * pulse, pelvis.z);
@@ -346,7 +396,7 @@ export function createRig() {
   // Ganho dos desvios assados (o groove sai amostrado a 4 por tempo e perde um
   // pouco do tremor; a pelve vem um pouco menos que na roupa de sensores) e o
   // quique no pulso, que nos trechos reais aparece fraco.
-  const BODY_GAIN = 1.35, PELVIS_SWAY = 0.8, BODY_BOUNCE = 0.7;
+  const BODY_GAIN = 1.35, PELVIS_SWAY = 0.8, BODY_BOUNCE = 0.35;
   function applyBody(body, t, pitch, gain = 1) {
     const C = body.channels, n = body.delta.length / C, f = Math.max(0, t * body.fps);
     const i = Math.min(n - 2, Math.floor(f)), u = Math.min(1, f - i), k = BODY_GAIN * gain;
@@ -373,8 +423,8 @@ export function createRig() {
   const lapQ = {}, lapP = {};
   for (const limb of HANDS) {
     const sx = limb === "MD" ? 1 : -1;
-    lapP[limb] = new Vector3(0.13 * sx, 0.655, -0.02);
-    lapQ[limb] = stickQuat(new Vector3(-0.55 * sx, -0.08, -0.83), deg(55) * sx);
+    lapP[limb] = new Vector3(0.14 * sx, 0.655, 0.0);
+    lapQ[limb] = stickQuat(new Vector3(-0.82 * sx, -0.06, -0.57), deg(55) * sx);
   }
   const restV = new Vector3();
   const lapW = { MD: 0, ME: 0 };
@@ -399,6 +449,8 @@ export function createRig() {
     if (lap > 0) {
       st.pos.lerp(lapP[limb], lap);
       st.quat.slerp(lapQ[limb], lap);
+      // no caminho, a mão sobe um pouco pra baqueta passar por cima da caixa
+      st.pos.y += 0.07 * 4 * lap * (1 - lap);
       drive.swivel[limb] += (0.18 - drive.swivel[limb]) * lap;
       drive.grip[limb] *= 1 - lap;
       arms[limb].dir.set(0, 1, 0).applyQuaternion(st.quat);
@@ -464,7 +516,7 @@ export function createRig() {
     skel, drive, torso, arms, legs, configs, update, tip, TIP_R, X_AXIS,
     /** Performance assada (perform.js) ou null pro modelo procedural. */
     setPlan(p) { plan = p; },
-    wrists, headRest,
+    wrists, headRest, curveClearance,
     get plan() { return plan; },
   };
 }

@@ -88,6 +88,7 @@ const DOWN = new Vector3(0, -1, 0);
 const side = (l) => (l === "MD" || l === "PD" ? 1 : -1);
 // Mão em relação ao antebraço com o polegar pra cima (torção zero), em volta do y.
 const TWIST0 = Math.PI / 2;
+const STRETCH = 1.025; // quanto o braço pode esticar além do comprimento (invisível)
 const mirror = (a, s) => [a[0] * s, a[1], a[2]];
 
 /** Comando de pose (o que o "baterista" decide a cada quadro). */
@@ -221,7 +222,7 @@ export function createSkeleton() {
     for (let k = 0; k < 2; k++) {
       const ex = S.distanceTo(W) - (a + b - 0.004);
       if (ex <= 0) break;
-      tB.subVectors(W, S).normalize().multiplyScalar(Math.min(ex, 0.06) * 1.05).add(S).sub(SC).setLength(clavLen);
+      tB.subVectors(W, S).normalize().multiplyScalar(Math.min(ex, 0.08) * 1.05).add(S).sub(SC).setLength(clavLen);
       S.copy(SC).add(tB);
     }
 
@@ -238,8 +239,10 @@ export function createSkeleton() {
     ref.normalize();
     // pra fora = +X na direita e -X na esquerda: gira o "pendurado" em volta do eixo
     e0.copy(ref).applyAxisAngle(axis, -s * d.swivel[l]);
-    // se não alcançar, o braço estica na direção do pulso (a mão continua na baqueta)
-    reached[l] = solveTwoBone(S, W, a, b, e0, E, tD);
+    // um pouquinho longe demais (até 2,5%): o braço estica sem ninguém ver; mais
+    // que isso, estica na direção do pulso (a mão continua na baqueta)
+    const k = Math.min(STRETCH, Math.max(1, dist / (a + b - 2e-4)));
+    reached[l] = solveTwoBone(S, W, a * k, b * k, e0, E, tD);
     hinge.crossVectors(e0, axis).normalize();
 
     frameFrom(SC, tA.subVectors(S, SC), Y.clone().applyQuaternion(qA), mB);
