@@ -61,6 +61,13 @@ A tela toda é o palco: um gato de pelúcia toca a tab em sincronia com a músic
 próximas notas chegando na linha do "agora", uma linha por peça, com a mão que toca
 cada nota: **D** (direita) ou **E** (esquerda), a mesma conta que o gato usa.
 
+O baterista se mexe como gente porque aprendeu com um baterista de verdade: cada
+golpe usa o golpe mais parecido de uma captura de movimento (14 músicas tocadas com
+uma roupa de sensores), o tronco e a cabeça balançam como os dele e o pé direito toca
+de calcanhar levantado nas partes fortes. Isso é calculado quando a música abre, em
+segundo plano; a ponta da baqueta continua encostando na peça exatamente na hora de
+cada nota.
+
 **Pra validar a tab:**
 - **Tab / Original** (tecla `A`) alterna entre a banda com a tab tocando e a banda com a
   bateria de verdade. Se as duas soarem iguais, a tab está certa.
@@ -123,10 +130,14 @@ Resultados atuais (F1): andamento fixo 0.99, acelerando de 96 a 116 BPM 0.98, sh
 
 O palco 3D tem uma página própria pra desenvolvimento, sem áudio: sirva a raiz do
 repositório (`python -m http.server`) e abra `/drumsomething/player/kit3d-dev.html`.
-Detalhes em [`docs/kit3d.md`](docs/kit3d.md).
+Detalhes em [`docs/kit3d.md`](docs/kit3d.md). O movimento do baterista e o laboratório
+que compara o nosso com o baterista real estão em [`docs/animacao.md`](docs/animacao.md).
 
 ## Licenças
 
 - Modelo ADTOF: CC BY-NC-SA 4.0, **só uso não comercial** ([ADTOF](https://github.com/MZehren/ADTOF), [ADTOF-pytorch](https://github.com/xavriley/ADTOF-pytorch)).
 - Demucs: MIT. beat_this: MIT. Three.js: MIT.
 - Fonte Instrument Serif: SIL Open Font License 1.1 (`drumsomething/player/vendor/fonts/OFL.txt`).
+- Biblioteca de movimento (`drumsomething/player/kit3d/moves/mmip.json`): derivada da base
+  [MMIP](https://mmip.cs.ucy.ac.cy) (Universidade de Chipre / CYENS), CC BY-NC-SA 4.0,
+  **só uso não comercial**.

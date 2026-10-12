@@ -23,7 +23,10 @@ drumsomething/player/
   index.html              player atual (a integração entra depois)
   kit3d/
     kit3d.js              ponto de entrada: export mountKit3D
-    ...                   outros módulos (cena, kit, avatar, ik, sticking, timeline)
+    skeleton.js, rig.js   esqueleto humano e o baterista que decide a pose
+    perform.js, moves.js  performance assada a partir da captura (Worker: performworker.js)
+    moves/mmip.json       biblioteca de golpes e de corpo (derivada da base MMIP)
+    ...                   outros módulos (kit, estilos, gato, ik, sticking, timeline)
   kit3d-dev.html          página de desenvolvimento isolada
   vendor/
     three.module.min.js   Three.js com versão exata fixada
@@ -116,16 +119,32 @@ Comece simples e acerte os grooves comuns primeiro.
 
 ## Animação
 
-- A pose de cada membro é uma função de `t`: ache o golpe anterior e o próximo daquele
-  membro (busca binária na linha do tempo dele) e interpole.
-  - Golpe: a ponta da baqueta encosta na peça exatamente em `t`.
-  - Preparação: a baqueta sobe antes do golpe. A altura depende de `vel`
-    (`ghost` = quase encostada) e de quanto tempo sobra até o próximo golpe.
-  - Rebote rápido depois do golpe. Sem golpe por perto, volta pra posição de descanso.
-- Pé: calcanhar parado, ponta desce no golpe, pedal acompanha.
-- Leve balanço do tronco no tempo (opcional, sutil).
-- Desempenho: ~3000 notas no máximo. 60 fps numa GPU integrada fraca. Poucos polígonos,
-  1 luz direcional + 1 ambiente, sombra simples ou nenhuma, `devicePixelRatio` limitado a 2.
+Três camadas, todas sem estado entre quadros (seek, loop e velocidade continuam
+perfeitos):
+
+- **Esqueleto** (`skeleton.js`): coluna em 3 partes, pescoço, cabeça, clavículas, braço,
+  antebraço com torção, mão com 5 dedos e pernas com tornozelo e dedos. Recebe um
+  comando por quadro (onde está cada baqueta, rotações da coluna e da cabeça, abertura
+  dos cotovelos, pés nos pedais) e resolve o resto: a mão sai da baqueta por uma pegada
+  fixa, então a ponta fica onde o comando mandou, qualquer que seja o braço.
+- **Baterista** (`rig.js`): decide o comando no tempo `t`. As poses de golpe (fulcro,
+  direção e giro da baqueta, cotovelo) encostam a ponta exatamente no ponto de contato
+  de cada peça. Sem plano, um modelo procedural interpola entre elas (`motion.js`).
+- **Performance assada** (`perform.js`, num Worker: `performworker.js`): quando a música
+  abre, cada golpe de cada mão ganha o golpe real mais parecido da biblioteca
+  (`moves.js`, `moves/mmip.json`), testado no nosso kit (não pode atravessar peça nem
+  mergulhar), e o corpo é assado a 30 Hz (giro do tronco que segue as mãos, trechos
+  reais de groove no tempo da música, a cabeça olhando pro próximo alvo longe). O rig
+  só lê o plano pelo tempo; nas pontas de cada golpe o resíduo é zero, então o contato
+  continua exato.
+
+Pés: bumbo de calcanhar levantado nas partes fortes (a perna cai no pedal) e de
+calcanhar no pedal nas leves; o pé esquerdo segura o chimbal fechado quando a mão toca
+nele e faz o "chick" no 2 e no 4 no ride. Mão parada respira; em pausa longa as
+baquetas descansam nas coxas.
+
+Desempenho: pose em ~0,5 ms por quadro e plano de uma música de 4 min em menos de 1 s
+(no Worker). 60 fps numa Intel Iris Xe.
 
 ## Câmeras
 

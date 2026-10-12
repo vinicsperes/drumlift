@@ -224,3 +224,65 @@ fixtures). Ainda falta:
 - **jerk:** a medida está dominada pelo ruído da roupa de sensores. Precisa
   filtrar o real antes de comparar.
 
+
+### Fases 2 a 4: esqueleto, biblioteca e gerador (feito)
+
+**Esqueleto humano** (`kit3d/skeleton.js`). Coluna em 3 partes, pescoço, cabeça,
+clavículas, braço, antebraço que gira (metade da torção vai pro meio do antebraço),
+mão com 5 dedos fechados na baqueta e pernas com tornozelo e dedos. A mão sai da
+baqueta por uma pegada fixa, então o contato não depende do braço. O manequim virou
+um boneco de madeira articulado (uma malha, um draw call) e o gato ganhou os ossos
+novos: o corpo dele é gerado, então os pesos saem sozinhos.
+
+**Biblioteca** (`tools/mmip_moves.py` → `kit3d/moves/mmip.json`, 1,1 MB, CC BY-NC-SA):
+- ~15,6 mil golpes das 14 performances. Cada um é o desvio da mão em relação ao
+  caminho reto entre as duas poses de golpe (pulso, giro da mão, cotovelo),
+  comprimido por PCA (14 componentes explicam 90–95%).
+- O corpo: uma regressão das posições dos pulsos pro giro do tronco e das clavículas,
+  e 240 trechos de 8 tempos com o resto (balanço, olhadas, ajustes), no tempo da música.
+- O que os dados ensinaram no caminho:
+  - o atraso entre o MIDI e o movimento muda de uma gravação pra outra (de −83 a
+    +108 ms). Ele sai do tranco médio que um ponto preso na mão leva no golpe;
+  - duas sessões gravaram os ossos girados 180° em x;
+  - a orientação da mão tem um viés: uma baqueta "anatômica" sai apontando pra cima
+    na caixa. Por isso só o movimento relativo é transferido (não depende do viés);
+  - a pelve deriva 8–12 cm (roupa de sensores). Fica só o que muda em menos de 2 s.
+
+**Gerador** (`kit3d/perform.js`, num Worker). Pra cada golpe, os 12 recortes mais
+parecidos (mesma mão e peças, intervalo, força, vizinhos) são testados no nosso kit:
+perde quem atravessa uma peça ou mergulha abaixo das duas peças do golpe. Depois
+vem um sorteio determinístico entre os melhores, sem repetir. O corpo é assado a
+30 Hz: alcance + groove + a cabeça olhando pro próximo alvo longe. Os pés têm regras:
+calcanhar levantado no bumbo forte, chimbal fechado ou "chick" no 2 e no 4. Nas
+pausas, a mão respira, e numa pausa longa as baquetas descansam nas coxas.
+
+Garantias: contato em 0 mm em todas as notas (fixtures e gravações), o braço alcança
+todos os golpes, o plano de uma música de 4 min sai em menos de 1 s e a pose leva
+~0,5 ms por quadro (60 fps na Iris Xe).
+
+Laboratório (nosso ÷ real; o real agora é medido com a mesma pegada do nosso):
+
+| métrica | take 02 | take 05 | take 08 |
+|---|---|---|---|
+| preparação no acento | 1,22× | 1,33× | 1,09× |
+| preparação normal | 1,02× | 1,72× | 1,22× |
+| preparação fraca | 1,15× | 1,49× | 1,77× |
+| altura × força | 1,29× | 1,18× | 0,96× |
+| preparação nos pratos | 1,23× | 1,07× | 1,03× |
+| preparação nos tambores | 1,18× | 1,68× | 1,17× |
+| pulso ÷ ponta, pratos | 0,92× | 0,98× | 0,73× |
+| pulso ÷ ponta, tambores | 1,46× | 1,02× | 0,93× |
+| velocidade da ponta | 1,27× | 1,26× | 1,06× |
+| arco nas trocas | 0,85× | 1,19× | 1,24× |
+| balanço do peito | 1,05× | 0,86× | 1,16× |
+| balanço da cabeça | 0,98× | 0,76× | 1,20× |
+| aceno da cabeça no pulso | 0,82× | 0,69× | 1,88× |
+
+O gerador toca no estilo médio das 14 gravações, então numa gravação mais leve (a
+05) os golpes saem maiores que os daquela música. Ainda falta:
+- **cotovelo:** mexe ~2× mais que o real em relação à ponta. As proporções do boneco
+  são outras;
+- **mão parada:** varia muito entre as gravações (0,4× a 2×);
+- **raspões:** a ponta ainda raspa 1–2 cm na borda dos pratos em ~0,1–1% do tempo;
+- **fase 5:** física (rebote da baqueta, batedor, molas do gato);
+- **fase 6:** teste cego (real × nosso).
