@@ -252,9 +252,14 @@ export function mountKit3D(container, opts = {}) {
   let planReady = Promise.resolve(null);
   function requestPlan(song) {
     const id = ++planId;
-    plan = null;
-    style.rig.setPlan(null);
-    if (!useMoves || !song || !Array.isArray(song.notes)) { planReady = Promise.resolve(null); return; }
+    if (!useMoves || !song || !Array.isArray(song.notes)) {
+      plan = null;
+      style.rig.setPlan(null);
+      planReady = Promise.resolve(null);
+      return;
+    }
+    // o plano anterior continua valendo até o novo chegar (editar a tab não
+    // faz o baterista voltar pro modelo procedural por um instante)
     planReady = new Promise((resolve) => { planDone = resolve; });
     const msg = { id, song: { notes: song.notes, beats: song.beats, tempo: song.tempo, duration: song.duration }, url: MOVES_URL };
     try {
