@@ -18,7 +18,7 @@ import {
 import { CONTACTS, CYMBALS, DRUMS, HIHAT_PEDAL, KICK, KICK_PEDAL, THRONE } from "./layout.js";
 import { beaterAngle, cymbalProfile, pedalAngle, placeFrame, standRods } from "./pieces.js";
 import { INSTANCE_PIECE, upperBound } from "./timeline.js";
-import { flash, footPress } from "./motion.js";
+import { flash, footPress, hihatFoot } from "./motion.js";
 import { cymbalSwing, softWobble } from "./plushmotion.js";
 import { RINGS_PER_PIECE } from "./rings.js";
 import { plushMaterial, setSlot, setSlotEmissive } from "./felt.js";
@@ -230,12 +230,10 @@ export function createPlushKit() {
   add(ellipsoid(P.feltR, P.feltR, P.feltR, 20, 14).translate(0, P.beaterLen, 0), beater, SL.ball);
 
   // ---------- pedal do chimbal ----------
-  {
-    const H = HIHAT_PEDAL;
-    const g = pillow(0.084, 0.022, H.length, 4).translate(0, 0.011, -H.length / 2);
-    g.applyMatrix4(new Matrix4().makeRotationX(H.angle).setPosition(...H.hinge));
-    add(g, root, SL.pad);
-  }
+  const hhBoard = bone(group);
+  hhBoard.position.set(...HIHAT_PEDAL.hinge);
+  hhBoard.rotation.x = HIHAT_PEDAL.angle;
+  add(pillow(0.084, 0.022, HIHAT_PEDAL.length, 4).translate(0, 0.011, -HIHAT_PEDAL.length / 2), hhBoard, SL.pad);
 
   // ---------- banco: almofada redonda com costura ----------
   {
@@ -418,8 +416,10 @@ export function createPlushKit() {
     const p = footPress(prep.limbs.PD, t);
     kickBoard.rotation.x = pedalAngle(p);
     beater.rotation.x = beaterAngle(p);
+    hhBoard.rotation.x = HIHAT_PEDAL.angle - HIHAT_PEDAL.travel * hihatFoot(prep, t, hhState).press;
     return p;
   }
+  const hhState = { press: 0, tap: 0 };
 
   function setMuted(set) { muted = new Set(set || []); applyMuted(); }
 

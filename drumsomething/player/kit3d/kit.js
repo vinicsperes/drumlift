@@ -12,7 +12,7 @@ import {
   beaterAngle, contact, cymbalProfile, pedalAngle, placeFrame, standRods, strikeAngle, surfaceY,
 } from "./pieces.js";
 import { INSTANCE_PIECE } from "./timeline.js";
-import { flash, footPress, wobble } from "./motion.js";
+import { flash, footPress, hihatFoot, wobble } from "./motion.js";
 import { createRings, updateRings } from "./rings.js";
 
 const UP = new Vector3(0, 1, 0);
@@ -243,8 +243,10 @@ export function createKit() {
     const p = footPress(prep.limbs.PD, t);
     kickBoard.rotation.x = pedalAngle(p);
     beater.rotation.x = beaterAngle(p);
+    hhBoard.rotation.x = HIHAT_PEDAL.angle - HIHAT_PEDAL.travel * hihatFoot(prep, t, hhState).press;
     return p;
   }
+  const hhState = { press: 0, tap: 0 };
 
   function setMuted(set) { muted = new Set(set || []); applyMuted(); }
 

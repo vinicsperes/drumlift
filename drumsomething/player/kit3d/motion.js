@@ -132,6 +132,61 @@ export function footPress(hits, t) {
   return p;
 }
 
+const HH_DOWN = 0.08, HH_UP = 0.12;  // s: pé descendo e soltando no "chick"
+const HH_HOLD = 1.5;                // tempos: depois de tocar no chimbal, o pé segura fechado
+
+/**
+ * Pé esquerdo no pedal do chimbal: `press` (0 = solto, 1 = pisado até o fim) e
+ * `tap` (0..1, o calcanhar batendo o pulso). Tocando no chimbal com a baqueta,
+ * o pé segura o pedal fechado e o calcanhar marca o tempo; no ride e no prato,
+ * o pé faz o "chick" no 2 e no 4 (ou nas notas de pedal da música, se ela tiver);
+ * parado, o pé descansa no pedal.
+ */
+export function hihatFoot(prep, t, out = { press: 0, tap: 0 }) {
+  const clock = prep.clock, beat = clock.beatAt(t), len = clock.beatLen(t);
+  // chimbal tocado perto daqui (pra trás até HH_HOLD tempos, pra frente meio tempo)
+  const hh = prep.instHits.hihat || [];
+  const i = lastAtOrBefore(hh, t);
+  const since = i >= 0 ? (t - hh[i].t) / len : Infinity, until = i + 1 < hh.length ? (hh[i + 1].t - t) / len : Infinity;
+  const closed = Math.max(1 - clamp01((since - HH_HOLD) / 0.6), 1 - clamp01((until - 0.5) / 0.6));
+  // música rolando?
+  let active = 0;
+  for (const l of ["MD", "ME", "PD"]) {
+    const hits = prep.limbs[l];
+    const j = lastAtOrBefore(hits, t);
+    const d = Math.min(j >= 0 ? t - hits[j].t : Infinity, j + 1 < hits.length ? hits[j + 1].t - t : Infinity);
+    active = Math.max(active, 1 - clamp01((d - len) / len));
+  }
+  // chick: notas de pedal da música, ou o 2 e o 4
+  let chick = 0;
+  if (prep.pedal && prep.pedal.length) {
+    chick = pressAround(prep.pedal, t);
+  } else {
+    const b = Math.floor(beat);
+    for (const k of [b, b + 1]) {
+      if (((k % 2) + 2) % 2 !== 1) continue;
+      const tk = t + (k - beat) * len, s = t - tk;
+      if (s >= 0 && s < HH_UP) chick = Math.max(chick, 1 - easeOut(s / HH_UP));
+      else if (s < 0 && -s < HH_DOWN) { const u = 1 + s / HH_DOWN; chick = Math.max(chick, u * u); }
+    }
+  }
+  const ph = beat % 1;
+  out.press = closed + (1 - closed) * (active * chick + (1 - active) * 0.35);
+  out.tap = closed * active * Math.pow(Math.sin(Math.PI * (ph < 0 ? ph + 1 : ph)), 2);
+  return out;
+}
+
+/** Envelope de pisada em volta de tempos (desce HH_DOWN antes, solta em HH_UP). */
+function pressAround(times, t) {
+  let lo = 0, hi = times.length;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (times[m] <= t) lo = m + 1; else hi = m; }
+  let p = 0;
+  const a = times[lo - 1], b = times[lo];
+  if (a !== undefined && t - a < HH_UP) p = Math.max(p, 1 - easeOut((t - a) / HH_UP));
+  if (b !== undefined && b - t < HH_DOWN) { const u = 1 - (b - t) / HH_DOWN; p = Math.max(p, u * u); }
+  return p;
+}
+
 /**
  * Soma de balanços amortecidos dos últimos golpes numa peça (pratos).
  * Contínua no tempo: cada golpe começa com deslocamento zero.

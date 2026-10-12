@@ -33,7 +33,7 @@ export const KICK_PEDAL = {
   beaterBack: deg(45),            // quanto o batedor recua com o pedal solto
 };
 
-export const HIHAT_PEDAL = { hinge: [-0.3, 0.035, -0.1], length: 0.26, angle: deg(12) };
+export const HIHAT_PEDAL = { hinge: [-0.3, 0.035, -0.1], length: 0.26, angle: deg(12), travel: deg(8) };
 
 // Onde a ponta da baqueta encosta, no plano da peça: [x pra direita, z pro baterista].
 export const CONTACTS = {
