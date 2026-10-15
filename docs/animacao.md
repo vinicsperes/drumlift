@@ -179,7 +179,8 @@ do golpe, e trocas de peça com mínimo jerk.
 ## Riscos
 
 - **Licença MMIP CC BY-NC-SA:** uso não comercial, a mesma situação do ADTOF que
-  o projeto já usa. O arquivo derivado vai com crédito e a mesma licença.
+  o projeto já usa. Por isso a biblioteca derivada não vai no repositório: cada um
+  gera a sua (veja `kit3d/moves/LEIA-ME.md`), e sem ela vale o modelo procedural.
 - **Um baterista só:** o estilo dele vira o nosso. A roupa de sensores
   inerciais tem ruído (os pés escorregam), então os pés ficam procedurais.
 - **As baquetas não foram capturadas:** são inferidas pela mão e pelo MIDI.
@@ -234,7 +235,8 @@ baqueta por uma pegada fixa, então o contato não depende do braço. O manequim
 um boneco de madeira articulado (uma malha, um draw call) e o gato ganhou os ossos
 novos: o corpo dele é gerado, então os pesos saem sozinhos.
 
-**Biblioteca** (`tools/mmip_moves.py` → `kit3d/moves/mmip.json`, 1,1 MB, CC BY-NC-SA):
+**Biblioteca** (`tools/mmip_moves.py` → `kit3d/moves/mmip.json`, 1,1 MB, CC BY-NC-SA,
+fora do git):
 - ~15,6 mil golpes das 14 performances. Cada um é o desvio da mão em relação ao
   caminho reto entre as duas poses de golpe (pulso, giro da mão, cotovelo),
   comprimido por PCA (14 componentes explicam 90–95%).

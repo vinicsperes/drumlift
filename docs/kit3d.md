@@ -25,7 +25,7 @@ drumsomething/player/
     kit3d.js              ponto de entrada: export mountKit3D
     skeleton.js, rig.js   esqueleto humano e o baterista que decide a pose
     perform.js, moves.js  performance assada a partir da captura (Worker: performworker.js)
-    moves/mmip.json       biblioteca de golpes e de corpo (derivada da base MMIP)
+    moves/mmip.json       biblioteca de golpes e de corpo (gerada localmente, fora do git)
     ...                   outros módulos (kit, estilos, gato, ik, sticking, timeline)
   kit3d-dev.html          página de desenvolvimento isolada
   vendor/
@@ -132,11 +132,12 @@ perfeitos):
   de cada peça. Sem plano, um modelo procedural interpola entre elas (`motion.js`).
 - **Performance assada** (`perform.js`, num Worker: `performworker.js`): quando a música
   abre, cada golpe de cada mão ganha o golpe real mais parecido da biblioteca
-  (`moves.js`, `moves/mmip.json`), testado no nosso kit (não pode atravessar peça nem
+  (`moves.js`, `moves/mmip.json`, que cada um gera a partir da base MMIP: veja
+  `moves/LEIA-ME.md`), testado no nosso kit (não pode atravessar peça nem
   mergulhar), e o corpo é assado a 30 Hz (giro do tronco que segue as mãos, trechos
   reais de groove no tempo da música, a cabeça olhando pro próximo alvo longe). O rig
   só lê o plano pelo tempo; nas pontas de cada golpe o resíduo é zero, então o contato
-  continua exato.
+  continua exato. Sem a biblioteca, vale o modelo procedural.
 
 Pés: bumbo de calcanhar levantado nas partes fortes (a perna cai no pedal) e de
 calcanhar no pedal nas leves; o pé esquerdo segura o chimbal fechado quando a mão toca
