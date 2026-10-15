@@ -61,12 +61,15 @@ A tela toda é o palco: um gato de pelúcia toca a tab em sincronia com a músic
 próximas notas chegando na linha do "agora", uma linha por peça, com a mão que toca
 cada nota: **D** (direita) ou **E** (esquerda), a mesma conta que o gato usa.
 
-O baterista se mexe como gente porque aprendeu com um baterista de verdade: cada
-golpe usa o golpe mais parecido de uma captura de movimento (14 músicas tocadas com
-uma roupa de sensores), o tronco e a cabeça balançam como os dele e o pé direito toca
-de calcanhar levantado nas partes fortes. Isso é calculado quando a música abre, em
-segundo plano; a ponta da baqueta continua encostando na peça exatamente na hora de
-cada nota.
+O baterista pode aprender com um baterista de verdade: com a biblioteca de golpes
+gerada, cada golpe usa o golpe mais parecido de uma captura de movimento (14 músicas
+tocadas com uma roupa de sensores) e o tronco e a cabeça balançam como os dele. Isso é
+calculado quando a música abre, em segundo plano; a ponta da baqueta continua
+encostando na peça exatamente na hora de cada nota. A biblioteca não vem no
+repositório, porque a captura é de uso não comercial; pra gerar, veja
+[`kit3d/moves/LEIA-ME.md`](drumsomething/player/kit3d/moves/LEIA-ME.md). Sem ela, o
+baterista usa um modelo procedural. Nos dois casos, o pé direito toca de calcanhar
+levantado nas partes fortes.
 
 **Pra validar a tab:**
 - **Tab / Original** (tecla `A`) alterna entre a banda com a tab tocando e a banda com a
@@ -133,11 +136,17 @@ repositório (`python -m http.server`) e abra `/drumsomething/player/kit3d-dev.h
 Detalhes em [`docs/kit3d.md`](docs/kit3d.md). O movimento do baterista e o laboratório
 que compara o nosso com o baterista real estão em [`docs/animacao.md`](docs/animacao.md).
 
-## Licenças
+## Licença
 
-- Modelo ADTOF: CC BY-NC-SA 4.0, **só uso não comercial** ([ADTOF](https://github.com/MZehren/ADTOF), [ADTOF-pytorch](https://github.com/xavriley/ADTOF-pytorch)).
-- Demucs: MIT. beat_this: MIT. Three.js: MIT.
-- Fonte Instrument Serif: SIL Open Font License 1.1 (`drumsomething/player/vendor/fonts/OFL.txt`).
-- Biblioteca de movimento (`drumsomething/player/kit3d/moves/mmip.json`): derivada da base
+O código deste projeto é MIT (veja [`LICENSE`](LICENSE)). O que ele usa de fora tem
+licença própria:
+
+- **Modelo ADTOF** (baixado na instalação): CC BY-NC-SA 4.0, **só uso não comercial**
+  ([ADTOF](https://github.com/MZehren/ADTOF), [ADTOF-pytorch](https://github.com/xavriley/ADTOF-pytorch)).
+  É ele que transcreve a bateria, então essa restrição vale pra quem usa o projeto.
+- **Demucs** e **beat_this** (código e pesos): MIT.
+- **Three.js** e **fflate**, copiados no player: MIT (`drumsomething/player/vendor/LICENSE-*.txt`).
+- **Fonte Instrument Serif**: SIL Open Font License 1.1 (`drumsomething/player/vendor/fonts/OFL.txt`).
+- **Biblioteca de golpes** (opcional, fora do repositório): gerada a partir da base
   [MMIP](https://mmip.cs.ucy.ac.cy) (Universidade de Chipre / CYENS), CC BY-NC-SA 4.0,
   **só uso não comercial**.
