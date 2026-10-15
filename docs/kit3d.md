@@ -60,7 +60,9 @@ view.dispose();           // para o loop, libera WebGL e remove os listeners
 ## Dados (`song.json`)
 
 Tem dois exemplos em `tests/fixtures/`: `groove.json` (sintético, com viradas nos tons e
-crash) e `surf.json` (transcrito de uma música real, com ride e crash).
+crash) e `ride.json` (sintético, metade dos compassos conduzida no ride, com crash).
+As notas do `ride.json` são o gabarito exato da música de teste
+(`tests/make_test_song.py --ride`), na grade que o pipeline achou pra ela.
 
 ```js
 {
@@ -167,7 +169,7 @@ Pra rodar, sirva a raiz do repositório (`python -m http.server` na raiz) e abra
 
 - Em `groove.json`: o chimbal em colcheia é tocado pela MD, a caixa nos tempos 2 e 4 pela ME,
   o bumbo pelo PD, e as viradas descem pelos tons alternando as mãos.
-- Em `surf.json`: a MD vai pro ride nos trechos de condução.
+- Em `ride.json`: a MD vai pro ride nos trechos de condução.
 - O golpe acontece no tempo certo: a baqueta encosta em `t` com erro menor que 1 quadro.
 - Seek e loop não deixam a pose quebrada.
 - Nenhum erro no console. A página não rola na horizontal com 390 px de largura.

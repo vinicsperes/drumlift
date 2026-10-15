@@ -1,6 +1,6 @@
 """Gera uma música de teste com bateria + baixo + acordes e o gabarito da bateria.
 
-uso: python tests/make_test_song.py saida.wav [--bpm 104] [--bpm-end 112] [--bars 16] [--shuffle]
+uso: python tests/make_test_song.py saida.wav [--bpm 104] [--bpm-end 112] [--bars 16] [--shuffle] [--ride]
 Grava saida.wav e saida.truth.json ({piece, bar, step}; step em semicolcheias,
 ou em tercinas de colcheia com --shuffle).
 """
@@ -33,6 +33,7 @@ def main() -> None:
     ap.add_argument("--bpm-end", type=float, default=None, help="acelera/desacelera até esse BPM")
     ap.add_argument("--bars", type=int, default=16)
     ap.add_argument("--shuffle", action="store_true")
+    ap.add_argument("--ride", action="store_true", help="a cada 8 compassos, os 4 últimos conduzem no ride")
     a = ap.parse_args()
 
     rng = np.random.default_rng(1)
@@ -66,10 +67,12 @@ def main() -> None:
         if bar % 4 == 0:
             hits["crash"] = [0]
             hits["hihat"] = [s for s in hits["hihat"] if s != 0]
+        if a.ride and bar % 8 >= 4:
+            hits["ride"] = hits.pop("hihat")
         for piece, positions in hits.items():
             for s in positions:
                 t = when(bar, s) + rng.normal(0, 0.006)
-                add(kit[piece], t, 0.5 if piece == "hihat" and s % (steps // 4) else 0.8)
+                add(kit[piece], t, 0.5 if piece in ("hihat", "ride") and s % (steps // 4) else 0.8)
                 truth.append({"piece": piece, "bar": bar, "step": s})
 
     # Baixo e acordes (pra ter algo além da bateria pro Demucs separar).
