@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
-from drumsomething.kits import SR, _acustico
+from drumlift.kits import SR, _acustico
 
 # Groove de 1 compasso em semicolcheias (16 passos).
 GROOVE = {

@@ -1,4 +1,4 @@
-"""Baixa performances de bateria da base MMIP e converte pro formato do drumSomething.
+"""Baixa performances de bateria da base MMIP e converte pro formato do drumlift.
 
 A MMIP (Universidade de Chipre / CYENS) tem captura de movimento de corpo inteiro
 (com os dedos) de um baterista de rock, sincronizada com MIDI e áudio.
@@ -29,9 +29,9 @@ import mido
 import numpy as np
 import soundfile as sf
 
-from drumsomething import tab, transcribe
-from drumsomething.grid import build_beats, quantize
-from drumsomething.pieces import BY_KEY, ORDER
+from drumlift import tab, transcribe
+from drumlift.grid import build_beats, quantize
+from drumlift.pieces import BY_KEY, ORDER
 
 BASE = "https://mmip.cs.ucy.ac.cy"
 ROOT = Path(__file__).resolve().parent.parent / "songs" / "mmip"

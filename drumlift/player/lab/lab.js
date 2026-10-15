@@ -2,7 +2,7 @@
 // sincronizada com MIDI) ao lado do nosso baterista tocando as mesmas notas,
 // no mesmo relógio, e as mesmas métricas medidas nos dois.
 //
-//   /drumsomething/player/lab.html?take=/songs/mmip/01/&style=manequim
+//   /drumlift/player/lab.html?take=/songs/mmip/01/&style=manequim
 //   (a pasta vem de `uv run python tools/mmip.py fetch 1`)
 
 import {

@@ -1,5 +1,5 @@
 [project]
-name = "drumsomething"
+name = "drumlift"
 version = "0.1.0"
 description = "Isola a bateria de uma música, gera tablatura e toca a tab de volta para validar de ouvido."
 readme = "README.md"
@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.scripts]
-drumsomething = "drumsomething.cli:main"
+drumlift = "drumlift.cli:main"
 
 [tool.uv]
 environments = ["sys_platform == 'linux'"]
@@ -39,7 +39,7 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["drumsomething*"]
+include = ["drumlift*"]
 
 [tool.setuptools.package-data]
-drumsomething = ["player/*", "player/app/*", "player/kit3d/*", "player/kit3d/moves/*", "player/vendor/*", "player/vendor/fonts/*"]
+drumlift = ["player/*", "player/app/*", "player/kit3d/*", "player/kit3d/moves/*", "player/vendor/*", "player/vendor/fonts/*"]

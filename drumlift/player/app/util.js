@@ -29,11 +29,12 @@ export function lowerBound(arr, x, key = (v) => v) {
   return lo;
 }
 
-/** localStorage com try/catch (aba anônima, armazenamento bloqueado...). */
+/** localStorage com try/catch (aba anônima, armazenamento bloqueado...).
+ *  Até virar drumlift o prefixo era "drumsomething.": ler o antigo mantém os ajustes de quem já usava. */
 export function pref(key, value) {
   try {
-    if (value === undefined) return localStorage.getItem(`drumsomething.${key}`);
-    localStorage.setItem(`drumsomething.${key}`, String(value));
+    if (value === undefined) return localStorage.getItem(`drumlift.${key}`) ?? localStorage.getItem(`drumsomething.${key}`);
+    localStorage.setItem(`drumlift.${key}`, String(value));
   } catch { /* sem preferências, tudo bem */ }
   return null;
 }

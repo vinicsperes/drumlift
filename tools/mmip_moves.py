@@ -20,7 +20,7 @@ uso (depois de `tools/mmip.py fetch` e `node tools/mmip_bones.mjs songs/mmip/NN`
   uv run python tools/mmip_moves.py            # todas as performances baixadas
   uv run python tools/mmip_moves.py 5 6 7      # só algumas
 
-Saída: drumsomething/player/kit3d/moves/mmip.json
+Saída: drumlift/player/kit3d/moves/mmip.json
 """
 
 import argparse
@@ -33,7 +33,7 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "songs" / "mmip"
-OUT = ROOT / "drumsomething" / "player" / "kit3d" / "moves" / "mmip.json"
+OUT = ROOT / "drumlift" / "player" / "kit3d" / "moves" / "mmip.json"
 CREDIT = ("Movimento derivado da base MMIP (Multi-Modal Instrument Performances) da Universidade de "
           "Chipre e do CYENS – Centre of Excellence, https://mmip.cs.ucy.ac.cy. CC BY-NC-SA 4.0.")
 

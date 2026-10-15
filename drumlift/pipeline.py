@@ -86,7 +86,7 @@ def build(outdir: Path, title: str, *, subdiv: int | None = None, sensitivity: f
     meta = {"title": title, "duration": duration, "source": source, "sensitivity": sensitivity,
             "kits": kits.write_kits(outdir / "kits", custom_kit)}
     save(outdir, grid, notes, meta)
-    shutil.copytree(Path(str(files("drumsomething") / "player")), outdir, dirs_exist_ok=True,
+    shutil.copytree(Path(str(files("drumlift") / "player")), outdir, dirs_exist_ok=True,
                     ignore=shutil.ignore_patterns(
                         "kit3d-dev.html", "lab.html", "lab", "FBXLoader.js", "NURBS*.js", "fflate.module.js"))
 

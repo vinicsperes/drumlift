@@ -1,4 +1,4 @@
-# drumSomething
+# drumlift
 
 Pega uma música, isola a bateria, gera a tablatura e toca a tab de volta
 no andamento da música, pra você conferir de ouvido se ela bate com a gravação.
@@ -29,7 +29,7 @@ Na primeira execução ele baixa os modelos do Demucs e do beat_this (~160 MB).
 ## Uso
 
 ```sh
-uv run drumsomething run "minha musica.mp3"
+uv run drumlift run "minha musica.mp3"
 ```
 
 Processa a música, grava tudo em `out/minha-musica/` e abre o player no navegador.
@@ -37,8 +37,8 @@ Numa CPU comum uma música de 4 minutos leva uns 2 a 3 minutos (quase tudo é o 
 As etapas pesadas ficam em cache, então rodar de novo é rápido.
 
 ```sh
-uv run drumsomething play out/minha-musica          # abre o player de novo
-uv run drumsomething retab out/minha-musica --grid 3 # refaz só a tab (segundos)
+uv run drumlift play out/minha-musica          # abre o player de novo
+uv run drumlift retab out/minha-musica --grid 3 # refaz só a tab (segundos)
 ```
 
 Opções úteis (`run` e `retab`):
@@ -67,7 +67,7 @@ tocadas com uma roupa de sensores) e o tronco e a cabeça balançam como os dele
 calculado quando a música abre, em segundo plano; a ponta da baqueta continua
 encostando na peça exatamente na hora de cada nota. A biblioteca não vem no
 repositório, porque a captura é de uso não comercial; pra gerar, veja
-[`kit3d/moves/LEIA-ME.md`](drumsomething/player/kit3d/moves/LEIA-ME.md). Sem ela, o
+[`kit3d/moves/LEIA-ME.md`](drumlift/player/kit3d/moves/LEIA-ME.md). Sem ela, o
 baterista usa um modelo procedural. Nos dois casos, o pé direito toca de calcanhar
 levantado nas partes fortes.
 
@@ -125,14 +125,14 @@ Gera músicas sintéticas com gabarito e mede quantas notas a tab acertou:
 
 ```sh
 uv run python tests/make_test_song.py songs/teste.wav --bpm 96 --bpm-end 116 --bars 24
-uv run drumsomething run songs/teste.wav --no-play
+uv run drumlift run songs/teste.wav --no-play
 uv run python tests/score.py out/teste songs/teste.truth.json
 ```
 
 Resultados atuais (F1): andamento fixo 0.99, acelerando de 96 a 116 BPM 0.98, shuffle em tercina 0.98.
 
 O palco 3D tem uma página própria pra desenvolvimento, sem áudio: sirva a raiz do
-repositório (`python -m http.server`) e abra `/drumsomething/player/kit3d-dev.html`.
+repositório (`python -m http.server`) e abra `/drumlift/player/kit3d-dev.html`.
 Detalhes em [`docs/kit3d.md`](docs/kit3d.md). O movimento do baterista e o laboratório
 que compara o nosso com o baterista real estão em [`docs/animacao.md`](docs/animacao.md).
 
@@ -145,8 +145,8 @@ licença própria:
   ([ADTOF](https://github.com/MZehren/ADTOF), [ADTOF-pytorch](https://github.com/xavriley/ADTOF-pytorch)).
   É ele que transcreve a bateria, então essa restrição vale pra quem usa o projeto.
 - **Demucs** e **beat_this** (código e pesos): MIT.
-- **Three.js** e **fflate**, copiados no player: MIT (`drumsomething/player/vendor/LICENSE-*.txt`).
-- **Fonte Instrument Serif**: SIL Open Font License 1.1 (`drumsomething/player/vendor/fonts/OFL.txt`).
+- **Three.js** e **fflate**, copiados no player: MIT (`drumlift/player/vendor/LICENSE-*.txt`).
+- **Fonte Instrument Serif**: SIL Open Font License 1.1 (`drumlift/player/vendor/fonts/OFL.txt`).
 - **Biblioteca de golpes** (opcional, fora do repositório): gerada a partir da base
   [MMIP](https://mmip.cs.ucy.ac.cy) (Universidade de Chipre / CYENS), CC BY-NC-SA 4.0,
   **só uso não comercial**.

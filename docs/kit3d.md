@@ -15,11 +15,11 @@ Fora do escopo agora: personagem realista com rig, captura de movimento, assets 
 ## Arquitetura
 
 Módulo JavaScript sem etapa de build, no mesmo espírito do player atual
-(`drumsomething/player/index.html`). Ele **não toca áudio** e **não é dono do relógio**:
+(`drumlift/player/index.html`). Ele **não toca áudio** e **não é dono do relógio**:
 o player chama o módulo e informa o tempo atual da música a cada quadro.
 
 ```
-drumsomething/player/
+drumlift/player/
   index.html              player atual (a integração entra depois)
   kit3d/
     kit3d.js              ponto de entrada: export mountKit3D
@@ -163,7 +163,7 @@ Desempenho: pose em ~0,5 ms por quadro e plano de uma música de 4 min em menos 
 - botões de câmera e um seletor entre as duas fixtures.
 
 Pra rodar, sirva a raiz do repositório (`python -m http.server` na raiz) e abra
-`/drumsomething/player/kit3d-dev.html`.
+`/drumlift/player/kit3d-dev.html`.
 
 ## Critérios de pronto
 

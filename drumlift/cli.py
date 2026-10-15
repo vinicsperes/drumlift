@@ -14,7 +14,7 @@ def _grid(v: str) -> int | None:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(prog="drumsomething",
+    ap = argparse.ArgumentParser(prog="drumlift",
                                  description="Música -> bateria isolada -> tab -> tab tocando pra conferir de ouvido.")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
@@ -66,7 +66,7 @@ def main() -> None:
     print("  drums.mid         MIDI (abre no MuseScore/Guitar Pro/Reaper)")
     print("  tab_with_band.wav banda sem a bateria original + tab tocando")
     if a.no_play:
-        print(f"\nPra abrir o player: drumsomething play {outdir}")
+        print(f"\nPra abrir o player: drumlift play {outdir}")
     else:
         server.serve(outdir, a.port)
 

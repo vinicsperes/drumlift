@@ -11,7 +11,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const VENDOR = fileURLToPath(new URL("../drumsomething/player/vendor/", import.meta.url));
+const VENDOR = fileURLToPath(new URL("../drumlift/player/vendor/", import.meta.url));
 const { AnimationMixer, Quaternion, Vector3 } = await import(join(VENDOR, "three.module.min.js"));
 const { FBXLoader } = await import(join(VENDOR, "FBXLoader.js"));
 

@@ -57,7 +57,7 @@ class Handler(SimpleHTTPRequestHandler):
 
 def serve(outdir: Path, port: int = 8765, open_browser: bool = True) -> None:
     if not (outdir / "song.json").exists():
-        raise SystemExit(f"{outdir} não tem song.json — rode `drumsomething run` antes.")
+        raise SystemExit(f"{outdir} não tem song.json — rode `drumlift run` antes.")
     handler = partial(Handler, directory=str(outdir))
     for p in range(port, port + 20):
         try:

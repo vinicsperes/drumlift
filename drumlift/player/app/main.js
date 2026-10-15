@@ -1,4 +1,4 @@
-// Player do drumSomething: liga o motor de áudio, o baterista 3D (o palco, que
+// Player do drumlift: liga o motor de áudio, o baterista 3D (o palco, que
 // ocupa a tela toda), a faixa de notas, a tab completa e os controles.
 
 import { $, $$, SUBDIV_NAME, clamp, fmt, lowerBound, makeGrid, pref, splitTitle, toast } from "./util.js";
@@ -83,7 +83,7 @@ async function boot() {
 // ---------- música ----------
 function masthead(song) {
   const { name, artist } = splitTitle(song.title);
-  document.title = `${name} · drumSomething`;
+  document.title = `${name} · drumlift`;
   $("#title").textContent = name;
   $("#artist").textContent = artist;
   const [lo, hi] = song.tempo_range || [song.tempo, song.tempo];

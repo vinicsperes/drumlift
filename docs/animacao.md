@@ -193,7 +193,7 @@ do golpe, e trocas de peça com mínimo jerk.
 
 `uv run python tools/mmip.py fetch 1` baixa a primeira performance (rock
 alternativo, 75 BPM, 1245 notas). Pra abrir o laboratório, sirva a raiz do
-repositório e abra `/drumsomething/player/lab.html?take=/songs/mmip/01/`.
+repositório e abra `/drumlift/player/lab.html?take=/songs/mmip/01/`.
 
 As baquetas inferidas caem num raio de 5 a 7 cm em volta do ride, do chimbal e
 da caixa. Nos tons o raio é maior (17 a 21 cm), porque há menos golpes e o
