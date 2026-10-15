@@ -3,6 +3,8 @@ name = "drumsomething"
 version = "0.1.0"
 description = "Isola a bateria de uma música, gera tablatura e toca a tab de volta para validar de ouvido."
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "demucs>=4.1",
@@ -33,7 +35,7 @@ url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
