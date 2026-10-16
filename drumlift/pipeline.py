@@ -71,8 +71,11 @@ def transcribe_stage(outdir: Path, source: str, device: str = "cpu", force: bool
 
 
 def build(outdir: Path, title: str, *, subdiv: int | None = None, sensitivity: float = 1.0,
-          source: str = "drums", custom_kit: Path | None = None) -> Path:
-    """Etapa rápida: das ativações em cache até tab, MIDI, áudios e player."""
+          source: str = "drums", custom_kit: Path | None = None, player: bool = True) -> Path:
+    """Etapa rápida: das ativações em cache até tab, MIDI, áudios e player.
+
+    Com player=False grava só song.json, tab.txt e drums.mid (pra medir rápido).
+    """
     log("Montando a tab")
     raw = json.loads((outdir / "beats.json").read_text())
     act = np.load(outdir / f"activations_{source}.npy")
@@ -84,11 +87,12 @@ def build(outdir: Path, title: str, *, subdiv: int | None = None, sensitivity: f
     grid, notes = quantize(hits, beats, bpb, subdiv)
 
     meta = {"title": title, "duration": duration, "source": source, "sensitivity": sensitivity,
-            "kits": kits.write_kits(outdir / "kits", custom_kit)}
-    save(outdir, grid, notes, meta)
-    shutil.copytree(Path(str(files("drumlift") / "player")), outdir, dirs_exist_ok=True,
-                    ignore=shutil.ignore_patterns(
-                        "kit3d-dev.html", "lab.html", "lab", "FBXLoader.js", "NURBS*.js", "fflate.module.js"))
+            "kits": kits.write_kits(outdir / "kits", custom_kit) if player else {}}
+    save(outdir, grid, notes, meta, render_audio=player)
+    if player:
+        shutil.copytree(Path(str(files("drumlift") / "player")), outdir, dirs_exist_ok=True,
+                        ignore=shutil.ignore_patterns(
+                            "kit3d-dev.html", "lab.html", "lab", "FBXLoader.js", "NURBS*.js", "fflate.module.js"))
 
     counts = {BY_KEY[k].name: sum(n["piece"] == k for n in notes) for k in ORDER}
     bpm, lo, hi = grid.tempo()
@@ -97,7 +101,7 @@ def build(outdir: Path, title: str, *, subdiv: int | None = None, sensitivity: f
     return outdir
 
 
-def save(outdir: Path, grid: Grid, notes: list[dict], meta: dict) -> None:
+def save(outdir: Path, grid: Grid, notes: list[dict], meta: dict, render_audio: bool = True) -> None:
     """Grava song.json + tab.txt + drums.mid + áudios renderizados."""
     bpm, lo, hi = grid.tempo()
     used = [k for k in ORDER if any(n["piece"] == k for n in notes)]
@@ -116,8 +120,9 @@ def save(outdir: Path, grid: Grid, notes: list[dict], meta: dict) -> None:
     (outdir / "song.json").write_text(json.dumps(song, ensure_ascii=False))
     (outdir / "tab.txt").write_text(tab.render_text(grid, notes, meta["title"]))
     tab.write_midi(grid, notes, outdir / "drums.mid", meta["title"])
-    kit = kits.load_kit(outdir, meta["kits"]["acustico"])
-    render.write_renders(outdir, grid, notes, kit)
+    if render_audio:
+        kit = kits.load_kit(outdir, meta["kits"]["acustico"])
+        render.write_renders(outdir, grid, notes, kit)
 
 
 def load(outdir: Path) -> tuple[Grid, list[dict], dict]:
