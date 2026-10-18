@@ -46,23 +46,156 @@ class Grid:
         return float(np.median(bpm)), float(np.percentile(bpm, 5)), float(np.percentile(bpm, 95))
 
 
-def build_beats(beats: np.ndarray, downbeats: np.ndarray, duration: float) -> tuple[np.ndarray, int]:
+def _strength(hits: list[Hit], piece: str, times: np.ndarray, win: float = 0.04) -> np.ndarray:
+    """Confiança da nota de `piece` mais próxima de cada tempo (0 se não tiver nenhuma a até `win`)."""
+    sel = [h for h in hits if h.piece == piece]
+    if not sel:
+        return np.zeros(len(times))
+    ht = np.array([h.t for h in sel])
+    hc = np.array([h.conf for h in sel])
+    k = np.clip(np.searchsorted(ht, times), 1, max(1, len(ht) - 1))
+    out = np.zeros(len(times))
+    for j in (k - 1, np.minimum(k, len(ht) - 1)):
+        near = np.abs(ht[j] - times) <= win
+        out = np.where(near, np.maximum(out, hc[j]), out)
+    return out
+
+
+def _period_curve(beats: np.ndarray):
+    """Duração da batida ao longo da música, numa oitava só.
+
+    O detector às vezes acompanha o dobro ou a metade do andamento num trecho;
+    cada intervalo é dobrado/dividido até a oitava do intervalo mediano antes da
+    mediana móvel, então essas trocas não contaminam a curva.
+    """
+    d = np.diff(beats)
+    p0 = float(np.median(d))
+    folded = d * 2.0 ** np.round(np.log2(p0 / d))
+    k = 8
+    smooth = np.array([np.median(folded[max(0, i - k):i + k + 1]) for i in range(len(folded))])
+    mids = (beats[:-1] + beats[1:]) / 2
+    return lambda t: np.interp(t, mids, smooth)
+
+
+def _octave(period, hits: list[Hit]) -> int:
+    """Quantas oitavas mover o andamento pra caixa cair no 2 e no 4.
+
+    Num groove de rock/pop a caixa marca o contratempo: o intervalo mais comum
+    entre caixas vale duas batidas. Devolve k (batida = curva * 2**k).
+    """
+    s = np.array(sorted(h.t for h in hits if h.piece == "snare"))
+    if len(s) < 16:
+        return 0
+    r = np.log2(np.diff(s) / period(s[:-1]))
+    votes = {k: int(np.sum(np.abs(r - (k + 1)) < 0.15)) for k in (-1, 0, 1)}
+    best = max(votes, key=votes.get)
+    bpm = 60 / (float(np.median(period(s))) * 2.0 ** best)
+    if best != 0 and votes[best] > 1.3 * votes[0] and 50 <= bpm <= 210:
+        return best
+    return 0
+
+
+def regularize_beats(beats: np.ndarray, hits: list[Hit]) -> np.ndarray:
+    """Batidas numa oitava só, seguindo as do detector onde ele acertou.
+
+    Programação dinâmica sobre as batidas detectadas mais os pontos médios entre
+    elas (que cobrem trechos detectados na metade do andamento). O caminho paga
+    por intervalo fora da batida esperada e ganha com bumbo/caixa/prato na batida,
+    o que escolhe quais batidas manter num trecho detectado no dobro.
+    """
+    curve = _period_curve(beats)
+    k = _octave(curve, hits)
+
+    def period(t):
+        return curve(t) * 2.0 ** k
+
+    cand = np.concatenate([beats, (beats[:-1] + beats[1:]) / 2])
+    orig = np.concatenate([np.ones(len(beats)), np.zeros(len(beats) - 1)])
+    order = np.argsort(cand)
+    cand, orig = cand[order], orig[order]
+    w = (_strength(hits, "kick", cand) + _strength(hits, "snare", cand)
+         + 0.5 * _strength(hits, "cymbal", cand) + 0.5 * orig)
+
+    n = len(cand)
+    score = np.full(n, -np.inf)
+    prev = np.full(n, -1)
+    p_first, p_last = period(beats[0]), period(beats[-1])
+    for j in range(n):
+        if cand[j] <= beats[0] + 1.5 * p_first:
+            score[j] = w[j]
+        i = j - 1
+        while i >= 0 and cand[j] - cand[i] <= 1.6 * period(cand[j]):
+            ratio = (cand[j] - cand[i]) / period((cand[i] + cand[j]) / 2)
+            if ratio >= 0.6 and score[i] > -np.inf:
+                s = score[i] - 10 * np.log2(ratio) ** 2 + w[j]
+                if s > score[j]:
+                    score[j], prev[j] = s, i
+            i -= 1
+    ends = np.where(cand >= beats[-1] - 1.5 * p_last)[0]
+    j = int(ends[np.argmax(score[ends])])
+    path = []
+    while j >= 0:
+        path.append(cand[j])
+        j = prev[j]
+    return np.array(path[::-1])
+
+
+def _bar_phase(beats: np.ndarray, bpb: int, hits: list[Hit], db_votes: np.ndarray) -> int:
+    """Qual batida abre o compasso, pelo padrão da bateria.
+
+    Bumbo e prato de ataque no 1, caixa no 2 e no 4; os inícios de compasso do
+    detector entram como mais um voto (só onde ele estava no andamento certo).
+    """
+    kick = _strength(hits, "kick", beats)
+    snare = _strength(hits, "snare", beats)
+    crash = _strength(hits, "cymbal", beats)
+    if bpb == 4:
+        weights = {0: (1.0, -1.0, 1.0), 1: (-0.3, 1.0, -0.3), 2: (0.5, -1.0, 0.2), 3: (-0.3, 1.0, -0.3)}
+    else:
+        weights = {q: (1.0, 0.0, 1.0) if q == 0 else (0.0, 0.0, 0.0) for q in range(bpb)}
+    idx = np.arange(len(beats))
+    best, phase = -np.inf, 0
+    for ph in range(bpb):
+        q = (idx - ph) % bpb
+        wk, ws, wc = (np.array([weights[x][i] for x in q]) for i in range(3))
+        s = float(np.sum(wk * kick + ws * snare + wc * crash) + 1.5 * np.sum(db_votes[q == 0]))
+        if s > best:
+            best, phase = s, ph
+    return phase
+
+
+def build_beats(beats: np.ndarray, downbeats: np.ndarray, duration: float,
+                hits: list[Hit] | None = None) -> tuple[np.ndarray, int]:
     """Estende as batidas pra cobrir a música toda e alinha o índice 0 a um início de compasso.
 
-    Assume fórmula de compasso constante (a mais votada) e usa os downbeats só
-    pra decidir a fase; isso evita compassos tortos quando o detector erra um.
+    Assume fórmula de compasso constante (a mais votada). Com as notas da bateria,
+    corrige trechos detectados no dobro/metade do andamento e decide o início do
+    compasso pelo padrão da bateria; sem elas, usa só os downbeats do detector.
     """
-    beats = np.unique(np.asarray(beats, dtype=float))
-    if len(beats) < 4:
+    raw = np.unique(np.asarray(beats, dtype=float))
+    if len(raw) < 4:
         raise SystemExit("Não consegui detectar as batidas da música.")
+    beats = regularize_beats(raw, hits) if hits else raw
     ibi = float(np.median(np.diff(beats)))
 
-    # Índice da batida mais próxima de cada downbeat.
+    # Índice da batida mais próxima de cada downbeat, só onde o detector estava
+    # no mesmo andamento (num trecho no dobro, os downbeats dele caem no meio do compasso).
+    raw_ibi = np.interp(downbeats, (raw[:-1] + raw[1:]) / 2, np.diff(raw)) if len(downbeats) else []
+    local = np.interp(downbeats, (beats[:-1] + beats[1:]) / 2, np.diff(beats)) if len(downbeats) else []
     idx = [int(np.argmin(np.abs(beats - d))) for d in downbeats]
-    idx = sorted({i for i, d in zip(idx, downbeats) if abs(beats[i] - d) < 0.25 * ibi})
+    idx = sorted({i for i, d, r, l in zip(idx, downbeats, raw_ibi, local)
+                  if abs(beats[i] - d) < 0.25 * ibi and abs(np.log2(r / l)) < 0.25})
     gaps = [g for g in np.diff(idx) if 2 <= g <= 7]
+    if hits:
+        # Detector no dobro do andamento enxerga compasso de 2: tab de bateria escreve 4/4 (e 6 vira 3).
+        gaps = [{2: 4, 6: 3}.get(g, g) for g in gaps]
     bpb = int(Counter(gaps).most_common(1)[0][0]) if gaps else 4
-    phase = int(Counter(i % bpb for i in idx).most_common(1)[0][0]) if idx else 0
+    if hits:
+        votes = np.zeros(len(beats))
+        votes[idx] = 1
+        phase = _bar_phase(beats, bpb, hits, votes)
+    else:
+        phase = int(Counter(i % bpb for i in idx).most_common(1)[0][0]) if idx else 0
 
     # Antes da primeira batida: completa até t <= 0 e até a fase ficar 0.
     head = []
