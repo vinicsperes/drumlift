@@ -20,7 +20,7 @@ pos em semínimas desde o início do compasso (fração em texto, ex. "5/2").
 import argparse
 import json
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from fractions import Fraction
 from pathlib import Path
 
@@ -165,6 +165,18 @@ def score_song(ref_path: Path, song: dict) -> dict:
     for x in got:
         by_bar_got[x[0]].add(x)
     exact = sum(by_bar_ref[m] == by_bar_got[m] for m in range(len(bars)) if by_bar_ref[m])
+    errors = {"faltou": Counter(), "sobrou": Counter()}
+    for kind, mine, other in (("faltou", refset - got, got), ("sobrou", got - refset, refset)):
+        at = defaultdict(set)
+        for b, p, c in other:
+            at[(b, p)].add(c)
+        for b, p, c in mine:
+            if any((b, q, c) in other for q in at_offsets(p)):
+                errors[kind][f"{c}: posição perto mas diferente"] += 1
+            elif at[(b, p)] - {c}:
+                errors[kind][f"{c}: {'saiu' if kind == 'faltou' else 'era'} {'+'.join(sorted(at[(b, p)] - {c}))}"] += 1
+            else:
+                errors[kind][f"{c}: nada ali"] += 1
 
     # compassos no lugar: início de compasso do drumlift a até 70 ms de um do gabarito
     beats = np.array(song["beats"])
@@ -175,7 +187,12 @@ def score_song(ref_path: Path, song: dict) -> dict:
             "exact": exact, "placed": placed, "dl_bars": len(dl_starts) - 1, "shift": shift,
             "ref_bpm": float(np.median(60 / spq)), "dl_bpm": song["tempo"],
             "ref_sig": f"{bars[0]['num']}/{bars[0]['den']}", "dl_sig": f"{song['beats_per_bar']}/4",
-            "subdiv": song["subdiv"]}
+            "subdiv": song["subdiv"], "errors": errors}
+
+
+def at_offsets(p: Fraction) -> list[Fraction]:
+    """Posições vizinhas (até uma semicolcheia) onde a mesma nota conta como 'perto'."""
+    return [p + Fraction(k, 12) for k in range(-3, 4) if k]
 
 
 def table(title: str, counts: dict) -> list[str]:
@@ -198,6 +215,7 @@ def main() -> None:
     ap.add_argument("--retab", action="store_true", help="refaz a tab antes de medir")
     ap.add_argument("--out", type=Path, default=Path("out"))
     ap.add_argument("-q", "--quiet", action="store_true", help="só o resumo")
+    ap.add_argument("-e", "--erros", action="store_true", help="mostra de onde vêm os erros da tab")
     a = ap.parse_args()
 
     summary = []
@@ -224,6 +242,9 @@ def main() -> None:
                   f"idênticos ao gabarito: {r['exact']}/{r['bars_with_notes']}   (deslocamento {r['shift']:+d})")
             print("\n".join(table("notas", r["note"])))
             print("\n".join(table("tab", r["tab"])))
+            if a.erros:
+                for kind, cnt in r["errors"].items():
+                    print(f"  {kind}: " + "; ".join(f"{k} {v}" for k, v in sorted(cnt.items())))
 
     if summary:
         print(f"\n{'música':<40} {'notas F':>8} {'tab F':>6} {'no lugar':>9} {'idênticos':>10}")
