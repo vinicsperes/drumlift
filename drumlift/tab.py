@@ -35,6 +35,28 @@ def bar_cells(grid: Grid, notes: list[dict]) -> list[dict[str, list[str]]]:
     return bars
 
 
+def bar_columns(grid: Grid, bar: int) -> list[int]:
+    """Colunas do compasso que aparecem na tab: com grade mista, cada batida na sua subdivisão."""
+    if grid.beat_subdiv is None:
+        return list(range(grid.steps_per_bar))
+    cols = []
+    for b in range(grid.beats_per_bar):
+        s = int(grid.beat_subdiv[bar * grid.beats_per_bar + b])
+        cols += [b * 12 + j * (12 // s) for j in range(s)]
+    return cols
+
+
+def bar_count(grid: Grid, bar: int) -> str:
+    """Linha de contagem de um compasso ("1e&a2e&a..." ou, com tercinas, "1tl2e&a...")."""
+    if grid.beat_subdiv is None:
+        return count_line(grid)
+    out = ""
+    for b in range(grid.beats_per_bar):
+        for lab in _COUNT[int(grid.beat_subdiv[bar * grid.beats_per_bar + b])]:
+            out += lab.format(n=b + 1)[-1]
+    return out
+
+
 def count_line(grid: Grid) -> str:
     labels = _COUNT.get(grid.subdiv, ["{n}"] + ["."] * (grid.subdiv - 1))
     out = ""
@@ -52,7 +74,9 @@ def render_text(grid: Grid, notes: list[dict], title: str, bars_per_line: int = 
     lines = [
         f"{title}",
         f"Andamento: ~{bpm:.0f} BPM (varia {lo:.0f}-{hi:.0f})   "
-        f"Compasso: {grid.beats_per_bar}/4   Grade: {_SUBDIV_NAME.get(grid.subdiv, grid.subdiv)}",
+        f"Compasso: {grid.beats_per_bar}/4   Grade: "
+        + ("semicolcheias e tercinas (cada tempo na sua)" if grid.beat_subdiv is not None
+           else _SUBDIV_NAME.get(grid.subdiv, grid.subdiv)),
         "Legenda: " + "  ".join(f"{BY_KEY[k].label}={BY_KEY[k].name}" for k in used),
         f"         X/x = prato/chimbal   o = batida   {GHOST_SYMBOL} = nota fantasma (caixa fraca)",
         "",
@@ -62,8 +86,11 @@ def render_text(grid: Grid, notes: list[dict], title: str, bars_per_line: int = 
     def is_empty(b: int) -> bool:
         return all(c == "-" for k in used for c in bars[b][k])
 
+    def row(b: int, k: str) -> str:
+        return "".join(bars[b][k][c] for c in bar_columns(grid, b))
+
     def bar_key(b: int) -> tuple:
-        return tuple("".join(bars[b][k]) for k in used)
+        return (bar_count(grid, b),) + tuple(row(b, k) for k in used)
 
     b = 0
     prev_block = None
@@ -91,10 +118,9 @@ def render_text(grid: Grid, notes: list[dict], title: str, bars_per_line: int = 
         else:
             header = f"[{rng}] {fmt_time(grid.bar_start(b))}"
             lines.append(header)
-            lines.append(" " * (width + 1) + " ".join(count_line(grid) for _ in block))
+            lines.append(" " * (width + 1) + " ".join(bar_count(grid, i) for i in block))
             for k in used:
-                row = "|".join("".join(bars[i][k]) for i in block)
-                lines.append(f"{BY_KEY[k].label:<{width}}|{row}|")
+                lines.append(f"{BY_KEY[k].label:<{width}}|" + "|".join(row(i, k) for i in block) + "|")
             lines.append("")
             prev_block = (block, keys)
         b = block[-1] + 1

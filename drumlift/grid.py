@@ -16,8 +16,10 @@ from .transcribe import Hit
 class Grid:
     beats: np.ndarray  # tempo (s) de cada batida; bar i começa na batida i*beats_per_bar
     beats_per_bar: int
-    subdiv: int  # divisões por batida (4 = semicolcheias, 3 = tercinas...)
+    subdiv: int  # divisões por batida (4 = semicolcheias, 3 = tercinas...; 12 = misto)
     offset: float  # atraso médio das notas em relação à grade, em batidas
+    # Com subdiv 12: subdivisão de cada batida (4, 3 ou 6), pra escrever cada tempo na sua grade.
+    beat_subdiv: np.ndarray | None = None
 
     @property
     def steps_per_bar(self) -> int:
@@ -231,22 +233,67 @@ def choose_subdiv(pos: np.ndarray) -> int:
     return 4
 
 
+def beat_subdivs(pos: np.ndarray, n_beats: int, main: int) -> np.ndarray:
+    """Subdivisão de cada batida: semicolcheia (4), tercina (3) ou sextina (6).
+
+    Cada batida escolhe a grade em que suas notas encaixam melhor; trocar de
+    grade entre batidas vizinhas e sair da grade principal da música custam um
+    pouco, então uma nota meio torta não vira tercina sozinha, mas uma virada
+    em tercinas no meio de um groove reto aparece.
+    """
+    options = (4, 3, 6)
+    cost = np.zeros((n_beats, len(options)))
+    beat = np.floor(pos + 1 / 24).astype(int)
+    frac = pos - beat
+    for j, s in enumerate(options):
+        dev = np.abs(frac * s - np.round(frac * s)) / s
+        ok = (beat >= 0) & (beat < n_beats)
+        np.add.at(cost[:, j], beat[ok], dev[ok])
+        cost[:, j] += (0.0 if s == main else 0.03) + (0.02 if s == 6 else 0.0)
+    switch = 0.05
+    total = cost[0].copy()
+    back = np.zeros((n_beats, len(options)), dtype=int)
+    for b in range(1, n_beats):
+        trans = total[:, None] + switch * (1 - np.eye(len(options)))
+        back[b] = np.argmin(trans, axis=0)
+        total = trans[back[b], np.arange(len(options))] + cost[b]
+    path = [int(np.argmin(total))]
+    for b in range(n_beats - 1, 0, -1):
+        path.append(back[b][path[-1]])
+    return np.array([options[j] for j in path[::-1]])
+
+
 def quantize(hits: list[Hit], beats: np.ndarray, bpb: int, subdiv: int | None) -> tuple[Grid, list[dict]]:
-    """Encaixa as notas na grade. Retorna a grade e as notas com o passo de cada uma."""
+    """Encaixa as notas na grade. Retorna a grade e as notas com o passo de cada uma.
+
+    Sem subdivisão fixa, cada batida escolhe a sua (beat_subdivs); se a música
+    mistura reto e tercina, a grade vira 12 por batida e cada nota cai na grade da sua batida.
+    """
     pos_all = np.interp([h.t for h in hits], beats, np.arange(len(beats)))
     # Usa só as peças "de tempo" pra medir atraso/subdivisão (pratos longos atrapalham).
     timing = np.array([p for p, h in zip(pos_all, hits) if h.piece in ("kick", "snare", "hihat", "ride")])
     if timing.size == 0:
         timing = pos_all
-    if subdiv is None:
-        subdiv = choose_subdiv(timing) if timing.size else 4
-    offset, _ = _residuals(timing, subdiv) if timing.size else (0.0, 0.0)
-    grid = Grid(beats=beats, beats_per_bar=bpb, subdiv=subdiv, offset=offset)
+    main = subdiv or (choose_subdiv(timing) if timing.size else 4)
+    offset, _ = _residuals(timing, main) if timing.size else (0.0, 0.0)
+    per_beat = None
+    if subdiv is None and pos_all.size:
+        per_beat = beat_subdivs(pos_all - offset, len(beats), main)
+        used = set(per_beat[np.unique(np.clip(np.floor(pos_all - offset + 1 / 24).astype(int), 0, len(beats) - 1))])
+        if len(used) == 1:
+            main, per_beat = int(used.pop()), None
+    subdiv = 12 if per_beat is not None else main
+    grid = Grid(beats=beats, beats_per_bar=bpb, subdiv=subdiv, offset=offset, beat_subdiv=per_beat)
 
     # Mesma peça no mesmo passo: fica a mais forte.
     cells: dict[tuple[str, int], dict] = {}
     for p, h in zip(pos_all, hits):
-        step = int(np.round((p - offset) * subdiv))
+        if per_beat is not None:
+            b = int(np.floor(p - offset + 1 / 24))
+            s = int(per_beat[min(max(b, 0), len(per_beat) - 1)])
+            step = b * 12 + int(np.round((p - offset - b) * s)) * (12 // s)
+        else:
+            step = int(np.round((p - offset) * subdiv))
         if step < 0 or step >= grid.n_bars * grid.steps_per_bar:
             continue
         key = (h.piece, step)

@@ -110,6 +110,7 @@ def save(outdir: Path, grid: Grid, notes: list[dict], meta: dict, render_audio: 
         "tempo": round(bpm, 2), "tempo_range": [round(lo, 2), round(hi, 2)],
         "beats_per_bar": grid.beats_per_bar, "subdiv": grid.subdiv,
         "offset": grid.offset, "beats": [round(b, 5) for b in grid.beats.tolist()],
+        **({"beat_subdiv": grid.beat_subdiv.tolist()} if grid.beat_subdiv is not None else {}),
         "count": tab.count_line(grid),
         "pieces": [{"key": p.key, "label": p.label, "name": p.name, "symbol": p.symbol,
                     "used": p.key in used} for p in map(BY_KEY.get, ORDER)],
@@ -128,6 +129,7 @@ def save(outdir: Path, grid: Grid, notes: list[dict], meta: dict, render_audio: 
 def load(outdir: Path) -> tuple[Grid, list[dict], dict]:
     song = json.loads((outdir / "song.json").read_text())
     grid = Grid(beats=np.array(song["beats"]), beats_per_bar=song["beats_per_bar"],
-                subdiv=song["subdiv"], offset=song["offset"])
+                subdiv=song["subdiv"], offset=song["offset"],
+                beat_subdiv=np.array(song["beat_subdiv"]) if "beat_subdiv" in song else None)
     meta = {k: song[k] for k in ("title", "duration", "source", "sensitivity", "kits")}
     return grid, song["notes"], meta
