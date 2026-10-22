@@ -80,7 +80,7 @@ def build(outdir: Path, title: str, *, subdiv: int | None = None, sensitivity: f
     raw = json.loads((outdir / "beats.json").read_text())
     act = np.load(outdir / f"activations_{source}.npy")
     duration = sf.info(outdir / "mix.wav").duration
-    hits = transcribe.pick_hits(act, sensitivity)
+    hits = transcribe.drop_tom_doubles(transcribe.pick_hits(act, sensitivity))
     beats, bpb = build_beats(np.array(raw["beats"]), np.array(raw["downbeats"]), duration, hits)
     transcribe.split_cymbals(hits, beats)
     transcribe.estimate_velocity(hits, outdir / "drums.wav")

@@ -44,6 +44,27 @@ def pick_hits(act: np.ndarray, sensitivity: float = 1.0) -> list[Hit]:
     return hits
 
 
+def drop_tom_doubles(hits: list[Hit], win: float = 0.03) -> list[Hit]:
+    """Tira o tom que o ADTOF acende junto com a caixa no mesmo golpe.
+
+    Caixa e tom juntos quase não acontecem (são as duas mãos indo pra peças
+    vizinhas), mas o modelo costuma marcar os dois numa caixa grave. Fica só
+    a caixa, a não ser que o tom seja bem mais forte.
+    """
+    snares = np.array([h.t for h in hits if h.piece == "snare"])
+    conf = np.array([h.conf for h in hits if h.piece == "snare"])
+    if not snares.size:
+        return hits
+    out = []
+    for h in hits:
+        if h.piece == "tom":
+            near = np.abs(snares - h.t) <= win
+            if near.any() and h.conf < 1.3 * conf[near].max():
+                continue
+        out.append(h)
+    return out
+
+
 def split_cymbals(hits: list[Hit], beats: np.ndarray) -> None:
     """Separa a classe 'cymbal' do ADTOF em crash ou ride.
 
