@@ -118,27 +118,37 @@ def regularize_beats(beats: np.ndarray, hits: list[Hit]) -> np.ndarray:
     w = (_strength(hits, "kick", cand) + _strength(hits, "snare", cand)
          + 0.5 * _strength(hits, "cymbal", cand) + 0.5 * orig)
 
+    # Um salto de várias batidas (buraco sem batidas detectadas, numa pausa) é
+    # permitido com um custo por batida preenchida; as que faltam são interpoladas.
     n = len(cand)
     score = np.full(n, -np.inf)
     prev = np.full(n, -1)
+    steps = np.ones(n, dtype=int)
     p_first, p_last = period(beats[0]), period(beats[-1])
     for j in range(n):
         if cand[j] <= beats[0] + 1.5 * p_first:
             score[j] = w[j]
         i = j - 1
-        while i >= 0 and cand[j] - cand[i] <= 1.6 * period(cand[j]):
+        while i >= 0 and cand[j] - cand[i] <= 8.5 * period(cand[j]):
             ratio = (cand[j] - cand[i]) / period((cand[i] + cand[j]) / 2)
             if ratio >= 0.6 and score[i] > -np.inf:
-                s = score[i] - 10 * np.log2(ratio) ** 2 + w[j]
+                m = max(1, int(round(ratio)))
+                s = score[i] - 10 * np.log2(ratio / m) ** 2 - (m - 1) + w[j]
                 if s > score[j]:
-                    score[j], prev[j] = s, i
+                    score[j], prev[j], steps[j] = s, i, m
             i -= 1
     ends = np.where(cand >= beats[-1] - 1.5 * p_last)[0]
+    if not ends.size or not np.isfinite(score[ends]).any():
+        return beats
     j = int(ends[np.argmax(score[ends])])
     path = []
     while j >= 0:
-        path.append(cand[j])
-        j = prev[j]
+        i = prev[j]
+        if i >= 0 and steps[j] > 1:
+            path += list(np.linspace(cand[j], cand[i], steps[j] + 1)[:-1])
+        else:
+            path.append(cand[j])
+        j = i
     return np.array(path[::-1])
 
 
