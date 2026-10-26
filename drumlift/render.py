@@ -11,7 +11,7 @@ SR = 44100
 
 
 def synth_track(grid: Grid, notes: list[dict], kit: dict[str, np.ndarray], duration: float) -> np.ndarray:
-    out = np.zeros(int(duration * SR) + SR * 3, dtype=np.float32)
+    out = np.zeros(int(round(duration * SR)) + SR * 3, dtype=np.float32)
     times = grid.step_time([n["step"] for n in notes])
     for n, t in zip(notes, times):
         sample = kit[n["piece"]]
@@ -20,7 +20,7 @@ def synth_track(grid: Grid, notes: list[dict], kit: dict[str, np.ndarray], durat
         if not 0 <= i < len(out):
             continue
         out[i:i + len(sample)] += sample[: len(out) - i] * gain
-    return out[: int(duration * SR)]
+    return out[: int(round(duration * SR))]
 
 
 def write_renders(outdir: Path, grid: Grid, notes: list[dict], kit: dict[str, np.ndarray]) -> None:
