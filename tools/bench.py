@@ -75,62 +75,101 @@ def hits_near(t: np.ndarray, det: np.ndarray, tol: float) -> np.ndarray:
     return (d <= tol).reshape(t.shape)
 
 
-def align(bars: list[dict], ref: list, det_t: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Início (s) e duração de semínima (s) de cada compasso do gabarito no áudio."""
+def align(bars: list[dict], ref: list, det: dict[str, np.ndarray]) -> tuple[np.ndarray, np.ndarray]:
+    """Início (s) e duração de semínima (s) de cada compasso do gabarito no áudio.
+
+    Primeiro um DTW grosso (10 quadros/s) entre o gabarito no andamento escrito e
+    as notas detectadas, peça por peça; ele acha o lugar de cada compasso mesmo
+    com introdução repetitiva e andamento solto. Depois cada compasso é ajustado
+    fino em volta desse lugar. Cada nota do gabarito só conta se a mesma peça foi
+    detectada ali.
+    """
+    import librosa
+
     n = len(bars)
     length = np.array([4 * b["num"] / b["den"] for b in bars])
-    pos = defaultdict(list)
-    for bar, p, c in ref:
-        if c in ANCHORS:
-            pos[bar].append(float(p))
-    pos = {k: np.array(v) for k, v in pos.items()}
     nominal = np.array([60 / b["bpm"] for b in bars])
+    nom_start = np.concatenate([[0], np.cumsum(length * nominal)])
+    by_bar = defaultdict(lambda: defaultdict(list))
+    for bar, p, c in ref:
+        if c in ANCHORS and len(det.get(c, [])) > 1:
+            by_bar[bar][c].append(float(p))
+    pos = {m: {c: np.array(v) for c, v in d.items()} for m, d in by_bar.items()}
 
-    def follow(first: int, a0: float, b0: float) -> tuple[float, np.ndarray, np.ndarray]:
-        starts, spq = np.zeros(n), np.zeros(n)
-        starts[first], spq[first] = a0, b0
-        total = 0.0
-        for m in range(first + 1, n):
-            pa, pb = starts[m - 1] + length[m - 1] * spq[m - 1], spq[m - 1] * nominal[m] / nominal[m - 1]
+    fps = 10
+    classes = [c for c in ANCHORS if len(det.get(c, [])) > 1]
+
+    def roll(times: dict[str, np.ndarray], dur: float) -> np.ndarray:
+        x = np.zeros((len(classes) + 1, int(dur * fps) + 2))
+        for i, c in enumerate(classes):
+            f = np.clip(np.round(np.asarray(times.get(c, [])) * fps).astype(int), 0, x.shape[1] - 1)
+            np.add.at(x[i], f, 1.0)
+        x[:-1] = np.maximum(x[:-1], 0.5 * np.roll(x[:-1], 1, axis=1))
+        x[-1] = 0.3 * (x[:-1].sum(0) == 0)  # quadro sem nota também casa com quadro sem nota
+        return x
+
+    ref_t = defaultdict(list)
+    for m, d in pos.items():
+        for c, v in d.items():
+            ref_t[c] += list(nom_start[m] + v * nominal[m])
+    end = max(max(v) for v in det.values() if len(v)) + 2
+    X, Y = roll(ref_t, nom_start[-1]), roll(det, end)
+    _, wp = librosa.sequence.dtw(X=X, Y=Y, metric="cosine")
+    wp = wp[::-1] / fps
+    to_audio = lambda t: np.interp(t, wp[:, 0], wp[:, 1])  # noqa: E731
+
+    def hits(A: np.ndarray, B: np.ndarray, p: dict[str, np.ndarray], tol: float = 0.03) -> np.ndarray:
+        return sum(hits_near(A[..., None] + B[..., None] * v, det[c], tol).sum(-1) for c, v in p.items())
+
+    def refine(starts: np.ndarray, spq: np.ndarray) -> tuple[float, np.ndarray, np.ndarray]:
+        starts, spq, total = starts.copy(), spq.copy(), 0.0
+        for m in range(n):
             p = pos.get(m)
-            if p is None or len(p) < 3:
-                starts[m], spq[m] = pa, pb
+            if p is None or sum(len(v) for v in p.values()) < 3:
                 continue
-            a = pa + np.arange(-0.12, 0.1201, 0.005)
-            b = pb * np.arange(0.97, 1.0301, 0.005)
+            a = starts[m] + np.arange(-0.15, 0.1501, 0.005)
+            b = spq[m] * np.arange(0.96, 1.0401, 0.005)
             A, B = np.meshgrid(a, b, indexing="ij")
-            score = hits_near(A[..., None] + B[..., None] * p, det_t, 0.03).sum(-1)
-            score = score - 0.01 * np.abs(A - pa) / 0.12 - 0.01 * np.abs(B / pb - 1) / 0.03
+            score = hits(A, B, p) - 0.01 * np.abs(A - starts[m]) / 0.15
             i, j = np.unravel_index(np.argmax(score), score.shape)
             starts[m], spq[m] = A[i, j], B[i, j]
-            total += hits_near(starts[m] + spq[m] * p, det_t, 0.03).sum()
-        for m in range(first - 1, -1, -1):  # compassos sem bateria antes do primeiro
-            spq[m] = spq[m + 1]
-            starts[m] = starts[m + 1] - length[m] * spq[m]
+            total += hits(np.array(starts[m]), np.array(spq[m]), p)
         return total, starts, spq
 
-    # Primeiro compasso com notas: testa vários inícios e fica com o que alinha a música toda.
-    first = min(k for k, v in pos.items() if len(v) >= 3)
-    p = np.concatenate([pos.get(first + k, np.array([])) + length[first:first + k].sum()
-                        for k in range(2)])
-    est = sum(length[:first] * nominal[:first])
-    a = np.arange(max(-1.0, est - 8), est + 20, 0.01)
-    b = nominal[first] * np.arange(0.94, 1.0601, 0.005)
-    A, B = np.meshgrid(a, b, indexing="ij")
-    score = hits_near(A[..., None] + B[..., None] * p, det_t, 0.03).sum(-1).max(1)
-    cands = []
-    for i in np.argsort(-score, kind="stable"):
-        if all(abs(a[i] - c) > 0.2 for c in cands):
-            cands.append(a[i])
-        if len(cands) == 8:
-            break
-    best = None
-    for a0 in cands:
-        row = np.argmin(np.abs(a - a0))
-        b0 = B[row, np.argmax(hits_near(a0 + b[:, None] * p, det_t, 0.03).sum(-1))]
-        res = follow(first, a0, b0)
-        if best is None or res[0] > best[0]:
-            best = res
+    count = {m: sum(len(v) for v in d.values()) for m, d in pos.items()}
+    first = min(m for m, k in count.items() if k >= 3)
+
+    def chain(a0: float, b0: float) -> tuple[np.ndarray, np.ndarray]:
+        """Compasso a compasso a partir do primeiro (bom quando o DTW se perde num trecho)."""
+        starts, spq = np.zeros(n), np.zeros(n)
+        starts[first], spq[first] = a0, b0
+        for m in range(first + 1, n):
+            starts[m] = starts[m - 1] + length[m - 1] * spq[m - 1]
+            spq[m] = spq[m - 1] * nominal[m] / nominal[m - 1]
+            p = pos.get(m)
+            if p is None or count[m] < 3:
+                continue
+            A, B = np.meshgrid(starts[m] + np.arange(-0.12, 0.1201, 0.005),
+                               spq[m] * np.arange(0.97, 1.0301, 0.005), indexing="ij")
+            score = hits(A, B, p) - 0.01 * np.abs(A - starts[m]) / 0.12 - 0.01 * np.abs(B / spq[m] - 1) / 0.03
+            i, j = np.unravel_index(np.argmax(score), score.shape)
+            starts[m], spq[m] = A[i, j], B[i, j]
+        for m in range(first - 1, -1, -1):
+            spq[m] = spq[m + 1]
+            starts[m] = starts[m + 1] - length[m] * spq[m]
+        return starts, spq
+
+    # Inclinação do DTW por compasso é ruidosa (quadros de 100 ms): mediana de 9 compassos.
+    spq = np.diff(to_audio(nom_start)) / length
+    spq = np.where(spq > 0, spq, nominal)
+    spq = np.array([np.median(spq[max(0, m - 4):m + 5]) for m in range(n)])
+    via_dtw = refine(to_audio(nom_start[:-1]), spq)
+    # A corrente parte de onde o DTW pôs o primeiro compasso, ou até 8 tempos antes/depois
+    # (numa introdução repetitiva o DTW pode errar o começo por alguns tempos).
+    a0 = float(to_audio(nom_start[first]))
+    b0 = float(spq[first])
+    options = [via_dtw] + [refine(*chain(a0 + k * b0, b0)) for k in range(-8, 9)]
+    best = max(options, key=lambda r: r[0])
     return best[1], best[2]
 
 
@@ -142,7 +181,7 @@ def prf(nref: int, ndet: int, tp: int) -> tuple[float, float, float]:
 def score_song(ref_path: Path, song: dict) -> dict:
     bars, ref = load_ref(ref_path)
     det = [(n["t_raw"], PIECE[n["piece"]]) for n in song["notes"]]
-    starts, spq = align(bars, ref, np.array(sorted(t for t, c in det if c in ANCHORS)))
+    starts, spq = align(bars, ref, {c: np.array(sorted(t for t, k in det if k == c)) for c in ANCHORS})
 
     # notas no tempo
     note = {}
