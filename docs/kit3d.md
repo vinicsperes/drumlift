@@ -114,7 +114,7 @@ Comece simples e acerte os grooves comuns primeiro.
   - 3 ou mais notas de mão juntas → toque as 2 mais importantes (prato > caixa > tom).
 - **Notas sozinhas**:
   - chimbal/ride → MD; se a MD não tiver tempo (intervalo < ~90 ms), vai pra ME;
-  - caixa → ME; em sequências rápidas (intervalo < ~180 ms) alterna D-E-D-E;
+  - caixa → ME; em sequências rápidas (intervalo < ~180 ms, ou semicolcheia em andamento lento) alterna D-E-D-E;
   - tons → alternam dentro da virada, começando pela mão livre.
 - **Distribuição dos tons**: numa sequência de tons (até 1 tempo entre notas), vá do mais
   agudo pro mais grave (tom 1 → tom 2 → surdo), que é a virada mais comum. Tom isolado vai pro tom 2.

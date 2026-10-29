@@ -12,6 +12,9 @@ export const FAST_CYMBAL = 0.09; // s: a MD não repete prato mais rápido que i
 export const FAST_DRUM = 0.18;   // s: abaixo disso a caixa alterna as mãos
 
 const other = (limb) => (limb === "MD" ? "ME" : "MD");
+// Em andamento lento a semicolcheia passa de FAST_DRUM, mas virada em
+// semicolcheias é D-E-D-E em qualquer andamento.
+const fastDrum = (clock, t) => Math.max(FAST_DRUM, (clock.beatLen(t) / 4) * 1.1);
 
 // Com 3 ou mais notas de mão: o prato mais importante e o tambor mais
 // importante (se houver); senão, as duas primeiras na ordem prato > caixa > tom.
@@ -46,11 +49,12 @@ function assignSingle(g, prev, next, last, clock) {
     n.limb = n.t - last.MD < FAST_CYMBAL && n.piece !== "ride" ? "ME" : "MD";
     return;
   }
+  const fast = fastDrum(clock, n.t);
   const prevDrum = prev?.single && DRUMS.has(prev.single.piece) ? prev.single : null;
   if (prevDrum) {
     const gap = n.t - prevDrum.t;
     // Continua alternando: sequência rápida, ou tom dentro da virada (até 1 tempo).
-    if (gap < FAST_DRUM || (n.piece === "tom" && gap <= clock.beatLen(prevDrum.t) * 1.05)) {
+    if (gap < fast || (n.piece === "tom" && gap <= clock.beatLen(prevDrum.t) * 1.05)) {
       n.limb = other(prevDrum.limb);
       return;
     }
@@ -62,13 +66,13 @@ function assignSingle(g, prev, next, last, clock) {
   }
   // Caixa abrindo uma sequência rápida: começa com a direita (D-E-D-E).
   const nextDrum = next?.single && DRUMS.has(next.single.piece) ? next.single : null;
-  if (nextDrum && nextDrum.t - n.t < FAST_DRUM && n.t - last.MD >= FAST_CYMBAL) {
+  if (nextDrum && nextDrum.t - n.t < fast && n.t - last.MD >= FAST_CYMBAL) {
     n.limb = "MD";
     return;
   }
   // Caixa sozinha: ME, a não ser que a ME tenha acabado de tocar e a MD esteja
   // livre. Com as duas ocupadas a ME faz o golpe duplo e a MD segue no prato.
-  n.limb = n.t - last.ME < FAST_DRUM && n.t - last.MD >= FAST_DRUM ? "MD" : "ME";
+  n.limb = n.t - last.ME < fast && n.t - last.MD >= fast ? "MD" : "ME";
 }
 
 /** Marca `limb` em cada nota dos grupos (null = nenhum membro toca). */
