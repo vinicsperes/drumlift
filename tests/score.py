@@ -1,7 +1,7 @@
-"""Compara a tab gerada (song.json) com o gabarito da música de teste.
+"""Compare the generated tab (song.json) with the test song's ground truth.
 
-uso: python tests/score.py out/<musica> musica.truth.json
-Alinha os compassos automaticamente (o primeiro compasso da tab pode ser de silêncio).
+usage: python tests/score.py out/<song> song.truth.json
+Aligns bars automatically (the tab's first bar may be silence).
 """
 
 import json
@@ -20,8 +20,8 @@ def main() -> None:
 
     best = max(range(-4 * spb, 4 * spb + 1), key=lambda sh: len(ref & {(p, s - sh) for p, s in got}))
     got = {(p, s - best) for p, s in got}
-    print(f"grade {song['subdiv']}/batida, {song['tempo']:.1f} BPM, deslocamento {best} passos")
-    print(f"{'peça':<7}{'gab':>5}{'acertos':>9}{'faltou':>8}{'sobrou':>8}  F1")
+    print(f"grid {song['subdiv']}/beat, {song['tempo']:.1f} BPM, shift {best} steps")
+    print(f"{'piece':<7}{'ref':>5}{'hits':>9}{'missed':>8}{'extra':>8}  F1")
     for piece in sorted({p for p, _ in ref | got}):
         r = {x for x in ref if x[0] == piece}
         g = {x for x in got if x[0] == piece}
@@ -33,7 +33,7 @@ def main() -> None:
           f"{2 * tp / (len(ref) + len(got)):.2f}")
     confused = Counter((a, b) for a, s in ref - got for b, t in got - ref if s == t)
     if confused:
-        print("trocas (gabarito -> tab):", dict(confused))
+        print("swaps (truth -> tab):", dict(confused))
 
 
 if __name__ == "__main__":

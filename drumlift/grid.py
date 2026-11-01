@@ -1,7 +1,7 @@
-"""Grade rítmica: compassos a partir das batidas e quantização das notas.
+"""Rhythmic grid: bars from the beats, and note quantization.
 
-A grade acompanha as batidas reais da música (não um BPM fixo), então
-variações de andamento de banda ao vivo não desalinham a tab.
+The grid follows the song's real beats, not a fixed BPM, so a band that drifts
+in tempo doesn't misalign the tab.
 """
 
 from collections import Counter
@@ -14,11 +14,11 @@ from .transcribe import Hit
 
 @dataclass
 class Grid:
-    beats: np.ndarray  # tempo (s) de cada batida; bar i começa na batida i*beats_per_bar
+    beats: np.ndarray  # time (s) of each beat; bar i starts at beat i*beats_per_bar
     beats_per_bar: int
-    subdiv: int  # divisões por batida (4 = semicolcheias, 3 = tercinas...; 12 = misto)
-    offset: float  # atraso médio das notas em relação à grade, em batidas
-    # Com subdiv 12: subdivisão de cada batida (4, 3 ou 6), pra escrever cada tempo na sua grade.
+    subdiv: int  # divisions per beat (4 = sixteenths, 3 = triplets...; 12 = mixed)
+    offset: float  # mean delay of the notes against the grid, in beats
+    # With subdiv 12: subdivision of each beat (4, 3 or 6), to write each beat on its own grid.
     beat_subdiv: np.ndarray | None = None
 
     @property
@@ -30,11 +30,11 @@ class Grid:
         return (len(self.beats) - 1) // self.beats_per_bar
 
     def beat_pos(self, t) -> np.ndarray:
-        """Segundos -> posição contínua em batidas."""
+        """Seconds -> continuous position in beats."""
         return np.interp(t, self.beats, np.arange(len(self.beats)), left=np.nan, right=np.nan)
 
     def step_time(self, step) -> np.ndarray:
-        """Índice de passo da grade -> segundos (já compensando o atraso médio)."""
+        """Grid step index -> seconds (mean delay already compensated)."""
         return np.interp(np.asarray(step) / self.subdiv + self.offset,
                          np.arange(len(self.beats)), self.beats)
 
@@ -42,14 +42,14 @@ class Grid:
         return float(self.beats[bar * self.beats_per_bar])
 
     def tempo(self) -> tuple[float, float, float]:
-        """BPM mediano e faixa (percentis 5-95), medidos por compasso pra não pegar tremida de batida."""
+        """Median BPM and range (5th-95th percentile), measured per bar to ignore beat jitter."""
         bar_len = np.diff(self.beats[:: self.beats_per_bar])
         bpm = 60 * self.beats_per_bar / bar_len
         return float(np.median(bpm)), float(np.percentile(bpm, 5)), float(np.percentile(bpm, 95))
 
 
 def _strength(hits: list[Hit], piece: str, times: np.ndarray, win: float = 0.04) -> np.ndarray:
-    """Confiança da nota de `piece` mais próxima de cada tempo (0 se não tiver nenhuma a até `win`)."""
+    """Confidence of the `piece` note nearest each time (0 if none within `win`)."""
     sel = [h for h in hits if h.piece == piece]
     if not sel:
         return np.zeros(len(times))
@@ -64,11 +64,11 @@ def _strength(hits: list[Hit], piece: str, times: np.ndarray, win: float = 0.04)
 
 
 def _period_curve(beats: np.ndarray):
-    """Duração da batida ao longo da música, numa oitava só.
+    """Beat length over the song, in a single octave.
 
-    O detector às vezes acompanha o dobro ou a metade do andamento num trecho;
-    cada intervalo é dobrado/dividido até a oitava do intervalo mediano antes da
-    mediana móvel, então essas trocas não contaminam a curva.
+    The tracker sometimes follows double or half the tempo in a section. Each
+    interval is doubled or halved to the octave of the median interval before the
+    running median, so those flips don't contaminate the curve.
     """
     d = np.diff(beats)
     p0 = float(np.median(d))
@@ -80,10 +80,10 @@ def _period_curve(beats: np.ndarray):
 
 
 def _octave(period, hits: list[Hit]) -> int:
-    """Quantas oitavas mover o andamento pra caixa cair no 2 e no 4.
+    """How many octaves to move the tempo so the snare lands on 2 and 4.
 
-    Num groove de rock/pop a caixa marca o contratempo: o intervalo mais comum
-    entre caixas vale duas batidas. Devolve k (batida = curva * 2**k).
+    In a rock or pop groove the snare marks the backbeat, so the most common
+    interval between snares is two beats. Returns k (beat = curve * 2**k).
     """
     s = np.array(sorted(h.t for h in hits if h.piece == "snare"))
     if len(s) < 16:
@@ -98,12 +98,12 @@ def _octave(period, hits: list[Hit]) -> int:
 
 
 def regularize_beats(beats: np.ndarray, hits: list[Hit]) -> np.ndarray:
-    """Batidas numa oitava só, seguindo as do detector onde ele acertou.
+    """Beats in a single octave, following the tracker where it got them right.
 
-    Programação dinâmica sobre as batidas detectadas mais os pontos médios entre
-    elas (que cobrem trechos detectados na metade do andamento). O caminho paga
-    por intervalo fora da batida esperada e ganha com bumbo/caixa/prato na batida,
-    o que escolhe quais batidas manter num trecho detectado no dobro.
+    Dynamic programming over the tracked beats plus the midpoints between them
+    (which cover sections tracked at half tempo). The path pays for intervals off
+    the expected beat and earns from kick, snare and cymbal on the beat, which
+    picks the beats to keep in a section tracked at double tempo.
     """
     curve = _period_curve(beats)
     k = _octave(curve, hits)
@@ -118,8 +118,8 @@ def regularize_beats(beats: np.ndarray, hits: list[Hit]) -> np.ndarray:
     w = (_strength(hits, "kick", cand) + _strength(hits, "snare", cand)
          + 0.5 * _strength(hits, "cymbal", cand) + 0.5 * orig)
 
-    # Um salto de várias batidas (buraco sem batidas detectadas, numa pausa) é
-    # permitido com um custo por batida preenchida; as que faltam são interpoladas.
+    # A jump of several beats (a gap with no tracked beats, in a break) is allowed
+    # at a cost per filled beat; the missing ones are interpolated.
     n = len(cand)
     score = np.full(n, -np.inf)
     prev = np.full(n, -1)
@@ -153,10 +153,10 @@ def regularize_beats(beats: np.ndarray, hits: list[Hit]) -> np.ndarray:
 
 
 def _bar_phase(beats: np.ndarray, bpb: int, hits: list[Hit], db_votes: np.ndarray) -> int:
-    """Qual batida abre o compasso, pelo padrão da bateria.
+    """Which beat opens the bar, from the drum pattern.
 
-    Bumbo e prato de ataque no 1, caixa no 2 e no 4; os inícios de compasso do
-    detector entram como mais um voto (só onde ele estava no andamento certo).
+    Kick and crash on 1, snare on 2 and 4. The tracker's downbeats count as one
+    more vote, only where it had the right tempo.
     """
     kick = _strength(hits, "kick", beats)
     snare = _strength(hits, "snare", beats)
@@ -178,20 +178,20 @@ def _bar_phase(beats: np.ndarray, bpb: int, hits: list[Hit], db_votes: np.ndarra
 
 def build_beats(beats: np.ndarray, downbeats: np.ndarray, duration: float,
                 hits: list[Hit] | None = None) -> tuple[np.ndarray, int]:
-    """Estende as batidas pra cobrir a música toda e alinha o índice 0 a um início de compasso.
+    """Extend the beats over the whole song and align index 0 to a downbeat.
 
-    Assume fórmula de compasso constante (a mais votada). Com as notas da bateria,
-    corrige trechos detectados no dobro/metade do andamento e decide o início do
-    compasso pelo padrão da bateria; sem elas, usa só os downbeats do detector.
+    Assumes one time signature (the most voted). With the drum notes, it fixes
+    sections tracked at double or half tempo and places the downbeat from the drum
+    pattern; without them, it uses only the tracker's downbeats.
     """
     raw = np.unique(np.asarray(beats, dtype=float))
     if len(raw) < 4:
-        raise SystemExit("Não consegui detectar as batidas da música.")
+        raise SystemExit("Could not detect the song's beats.")
     beats = regularize_beats(raw, hits) if hits else raw
     ibi = float(np.median(np.diff(beats)))
 
-    # Índice da batida mais próxima de cada downbeat, só onde o detector estava
-    # no mesmo andamento (num trecho no dobro, os downbeats dele caem no meio do compasso).
+    # Index of the beat nearest each downbeat, only where the tracker had the same
+    # tempo (in a double-tempo section its downbeats land mid-bar).
     raw_ibi = np.interp(downbeats, (raw[:-1] + raw[1:]) / 2, np.diff(raw)) if len(downbeats) else []
     local = np.interp(downbeats, (beats[:-1] + beats[1:]) / 2, np.diff(beats)) if len(downbeats) else []
     idx = [int(np.argmin(np.abs(beats - d))) for d in downbeats]
@@ -199,7 +199,7 @@ def build_beats(beats: np.ndarray, downbeats: np.ndarray, duration: float,
                   if abs(beats[i] - d) < 0.25 * ibi and abs(np.log2(r / l)) < 0.25})
     gaps = [g for g in np.diff(idx) if 2 <= g <= 7]
     if hits:
-        # Detector no dobro do andamento enxerga compasso de 2: tab de bateria escreve 4/4 (e 6 vira 3).
+        # A tracker at double tempo sees bars of 2: drum tabs write 4/4 (and 6 becomes 3).
         gaps = [{2: 4, 6: 3}.get(g, g) for g in gaps]
     bpb = int(Counter(gaps).most_common(1)[0][0]) if gaps else 4
     if hits:
@@ -209,7 +209,7 @@ def build_beats(beats: np.ndarray, downbeats: np.ndarray, duration: float,
     else:
         phase = int(Counter(i % bpb for i in idx).most_common(1)[0][0]) if idx else 0
 
-    # Antes da primeira batida: completa até t <= 0 e até a fase ficar 0.
+    # Before the first beat: fill until t <= 0 and the phase is 0.
     head = []
     first = beats[0]
     while first > 0.0 or (len(head) + phase) % bpb:
@@ -217,7 +217,7 @@ def build_beats(beats: np.ndarray, downbeats: np.ndarray, duration: float,
         head.append(first)
     beats = np.concatenate([head[::-1], beats])
 
-    # Depois da última: completa até passar do fim e fechar o compasso (+1 de borda).
+    # After the last: fill past the end and close the bar (+1 as a margin).
     tail = []
     last = beats[-1]
     while last < duration or (len(beats) + len(tail) - 1) % bpb:
@@ -227,7 +227,7 @@ def build_beats(beats: np.ndarray, downbeats: np.ndarray, duration: float,
 
 
 def _residuals(pos: np.ndarray, subdiv: int) -> tuple[float, float]:
-    """Atraso mediano (em batidas) e erro médio de quantização após compensá-lo."""
+    """Median delay (in beats) and mean quantization error after compensating it."""
     r = pos * subdiv - np.round(pos * subdiv)
     off = float(np.median(r))
     r = (pos - off / subdiv) * subdiv
@@ -236,7 +236,7 @@ def _residuals(pos: np.ndarray, subdiv: int) -> tuple[float, float]:
 
 
 def choose_subdiv(pos: np.ndarray) -> int:
-    """Escolhe entre semicolcheia (4), tercina (3) ou sextina (6) pelo erro de encaixe."""
+    """Pick sixteenths (4), triplets (3) or sextuplets (6) by fit error."""
     err = {s: _residuals(pos, s)[1] for s in (4, 3, 6)}
     if min(err[3], err[6]) < 0.75 * err[4]:
         return 3 if err[3] <= err[6] * 1.15 else 6
@@ -244,12 +244,11 @@ def choose_subdiv(pos: np.ndarray) -> int:
 
 
 def beat_subdivs(pos: np.ndarray, n_beats: int, main: int) -> np.ndarray:
-    """Subdivisão de cada batida: semicolcheia (4), tercina (3) ou sextina (6).
+    """Subdivision of each beat: sixteenths (4), triplets (3) or sextuplets (6).
 
-    Cada batida escolhe a grade em que suas notas encaixam melhor; trocar de
-    grade entre batidas vizinhas e sair da grade principal da música custam um
-    pouco, então uma nota meio torta não vira tercina sozinha, mas uma virada
-    em tercinas no meio de um groove reto aparece.
+    Each beat picks the grid its notes fit best. Switching grids between neighboring
+    beats and leaving the song's main grid cost a little, so one crooked note doesn't
+    become a triplet, but a triplet fill in a straight groove still shows up.
     """
     options = (4, 3, 6)
     cost = np.zeros((n_beats, len(options)))
@@ -274,13 +273,14 @@ def beat_subdivs(pos: np.ndarray, n_beats: int, main: int) -> np.ndarray:
 
 
 def quantize(hits: list[Hit], beats: np.ndarray, bpb: int, subdiv: int | None) -> tuple[Grid, list[dict]]:
-    """Encaixa as notas na grade. Retorna a grade e as notas com o passo de cada uma.
+    """Fit the notes to the grid. Returns the grid and the notes with their steps.
 
-    Sem subdivisão fixa, cada batida escolhe a sua (beat_subdivs); se a música
-    mistura reto e tercina, a grade vira 12 por batida e cada nota cai na grade da sua batida.
+    With no fixed subdivision, each beat picks its own (beat_subdivs). If the song
+    mixes straight and triplets, the grid becomes 12 per beat and each note lands on
+    its beat's grid.
     """
     pos_all = np.interp([h.t for h in hits], beats, np.arange(len(beats)))
-    # Usa só as peças "de tempo" pra medir atraso/subdivisão (pratos longos atrapalham).
+    # Measure delay and subdivision on the timekeeping pieces only (long cymbals get in the way).
     timing = np.array([p for p, h in zip(pos_all, hits) if h.piece in ("kick", "snare", "hihat", "ride")])
     if timing.size == 0:
         timing = pos_all
@@ -295,7 +295,7 @@ def quantize(hits: list[Hit], beats: np.ndarray, bpb: int, subdiv: int | None) -
     subdiv = 12 if per_beat is not None else main
     grid = Grid(beats=beats, beats_per_bar=bpb, subdiv=subdiv, offset=offset, beat_subdiv=per_beat)
 
-    # Mesma peça no mesmo passo: fica a mais forte.
+    # Same piece on the same step: keep the strongest.
     cells: dict[tuple[str, int], dict] = {}
     for p, h in zip(pos_all, hits):
         if per_beat is not None:
@@ -316,7 +316,7 @@ def quantize(hits: list[Hit], beats: np.ndarray, bpb: int, subdiv: int | None) -
 
 
 def mark_ghosts(notes: list[dict]) -> None:
-    """Caixa bem mais fraca que o normal da música = nota fantasma."""
+    """A snare much weaker than the song's usual = ghost note."""
     snare = [n["vel"] for n in notes if n["piece"] == "snare"]
     if len(snare) < 8:
         return

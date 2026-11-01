@@ -1,4 +1,4 @@
-"""Saídas legíveis: tablatura em texto e MIDI com mapa de andamento."""
+"""Readable output: a text tab and MIDI with a tempo map."""
 
 from pathlib import Path
 
@@ -15,8 +15,8 @@ _COUNT = {
     6: ["{n}", ".", ".", "&", ".", "."],
     8: ["{n}", ".", "e", ".", "&", ".", "a", "."],
 }
-_SUBDIV_NAME = {2: "colcheias", 3: "tercinas de colcheia", 4: "semicolcheias",
-                6: "tercinas de semicolcheia", 8: "fusas"}
+_SUBDIV_NAME = {2: "eighths", 3: "eighth triplets", 4: "sixteenths",
+                6: "sixteenth triplets", 8: "thirty-seconds"}
 
 
 def fmt_time(t: float) -> str:
@@ -25,7 +25,7 @@ def fmt_time(t: float) -> str:
 
 
 def bar_cells(grid: Grid, notes: list[dict]) -> list[dict[str, list[str]]]:
-    """Uma matriz de caracteres por compasso: {peça: [símbolo por passo]}."""
+    """One character matrix per bar: {piece: [symbol per step]}."""
     spb = grid.steps_per_bar
     bars = [{k: ["-"] * spb for k in ORDER} for _ in range(grid.n_bars)]
     for n in notes:
@@ -36,7 +36,7 @@ def bar_cells(grid: Grid, notes: list[dict]) -> list[dict[str, list[str]]]:
 
 
 def bar_columns(grid: Grid, bar: int) -> list[int]:
-    """Colunas do compasso que aparecem na tab: com grade mista, cada batida na sua subdivisão."""
+    """Bar columns shown in the tab: on a mixed grid, each beat on its own subdivision."""
     if grid.beat_subdiv is None:
         return list(range(grid.steps_per_bar))
     cols = []
@@ -47,7 +47,7 @@ def bar_columns(grid: Grid, bar: int) -> list[int]:
 
 
 def bar_count(grid: Grid, bar: int) -> str:
-    """Linha de contagem de um compasso ("1e&a2e&a..." ou, com tercinas, "1tl2e&a...")."""
+    """Count line of a bar ("1e&a2e&a..." or, with triplets, "1tl2e&a...")."""
     if grid.beat_subdiv is None:
         return count_line(grid)
     out = ""
@@ -73,12 +73,12 @@ def render_text(grid: Grid, notes: list[dict], title: str, bars_per_line: int = 
 
     lines = [
         f"{title}",
-        f"Andamento: ~{bpm:.0f} BPM (varia {lo:.0f}-{hi:.0f})   "
-        f"Compasso: {grid.beats_per_bar}/4   Grade: "
-        + ("semicolcheias e tercinas (cada tempo na sua)" if grid.beat_subdiv is not None
+        f"Tempo: ~{bpm:.0f} BPM (range {lo:.0f}-{hi:.0f})   "
+        f"Time: {grid.beats_per_bar}/4   Grid: "
+        + ("sixteenths and triplets (per beat)" if grid.beat_subdiv is not None
            else _SUBDIV_NAME.get(grid.subdiv, grid.subdiv)),
-        "Legenda: " + "  ".join(f"{BY_KEY[k].label}={BY_KEY[k].name}" for k in used),
-        f"         X/x = prato/chimbal   o = batida   {GHOST_SYMBOL} = nota fantasma (caixa fraca)",
+        "Legend: " + "  ".join(f"{BY_KEY[k].label}={BY_KEY[k].name}" for k in used),
+        f"         X/x = cymbal/hi-hat   o = hit   {GHOST_SYMBOL} = ghost note (weak snare)",
         "",
     ]
     width = max(len(BY_KEY[k].label) for k in used) if used else 2
@@ -100,7 +100,7 @@ def render_text(grid: Grid, notes: list[dict], title: str, bars_per_line: int = 
             while e + 1 < grid.n_bars and is_empty(e + 1):
                 e += 1
             rng = f"{b + 1}" if e == b else f"{b + 1}-{e + 1}"
-            lines += [f"[{rng}] {fmt_time(grid.bar_start(b))}  (sem bateria)", ""]
+            lines += [f"[{rng}] {fmt_time(grid.bar_start(b))}  (no drums)", ""]
             b = e + 1
             prev_block = None
             continue
@@ -113,7 +113,7 @@ def render_text(grid: Grid, notes: list[dict], title: str, bars_per_line: int = 
 
         if prev_block is not None and keys == prev_block[1]:
             first = prev_block[0]
-            lines += [f"[{rng}] {fmt_time(grid.bar_start(b))}  = igual aos compassos "
+            lines += [f"[{rng}] {fmt_time(grid.bar_start(b))}  = same as bars "
                       f"{first[0] + 1}-{first[-1] + 1}", ""]
         else:
             header = f"[{rng}] {fmt_time(grid.bar_start(b))}"
@@ -128,11 +128,11 @@ def render_text(grid: Grid, notes: list[dict], title: str, bars_per_line: int = 
 
 
 def write_midi(grid: Grid, notes: list[dict], path: Path, title: str) -> None:
-    """MIDI de bateria (canal 10) com um evento de andamento por batida.
+    """Drum MIDI (channel 10) with one tempo event per beat.
 
-    Cada batida vale exatamente 480 ticks, então editores de partitura
-    (MuseScore, Guitar Pro, Reaper...) mostram as notas já no lugar certo
-    da grade, e a reprodução continua sincronizada com a gravação original.
+    Each beat is exactly 480 ticks, so score editors (MuseScore, Guitar Pro,
+    Reaper...) show the notes on the right grid position, and playback stays in
+    sync with the original recording.
     """
     tpb = 480
     mid = mido.MidiFile(ticks_per_beat=tpb)
@@ -143,12 +143,11 @@ def write_midi(grid: Grid, notes: list[dict], path: Path, title: str) -> None:
     tempo_track.append(mido.MetaMessage("track_name", name=title[:60], time=0))
     tempo_track.append(mido.MetaMessage("time_signature", numerator=grid.beats_per_bar,
                                         denominator=4, time=0))
-    # Tick 0 = batida 0 da grade, que pode cair antes do início do áudio
-    # (compasso incompleto no começo). Num DAW, posicione o áudio original
-    # nesse deslocamento pra ficar sincronizado com o MIDI.
+    # Tick 0 = grid beat 0, which can fall before the audio starts (an incomplete
+    # first bar). In a DAW, place the original audio at this offset to sync with the MIDI.
     lead = -float(grid.beats[0])
     tempo_track.append(mido.MetaMessage("marker", time=0,
-                                        text=f"audio original em {lead:+.3f}s"))
+                                        text=f"original audio at {lead:+.3f}s"))
     for i, dt in enumerate(np.diff(grid.beats)):
         tempo_track.append(mido.MetaMessage("set_tempo", tempo=int(round(dt * 1e6)),
                                             time=0 if i == 0 else tpb))

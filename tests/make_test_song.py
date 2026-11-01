@@ -1,8 +1,8 @@
-"""Gera uma música de teste com bateria + baixo + acordes e o gabarito da bateria.
+"""Generate a test song with drums, bass and chords, plus the drums' ground truth.
 
-uso: python tests/make_test_song.py saida.wav [--bpm 104] [--bpm-end 112] [--bars 16] [--shuffle] [--ride]
-Grava saida.wav e saida.truth.json ({piece, bar, step}; step em semicolcheias,
-ou em tercinas de colcheia com --shuffle).
+usage: python tests/make_test_song.py out.wav [--bpm 104] [--bpm-end 112] [--bars 16] [--shuffle] [--ride]
+Writes out.wav and out.truth.json ({piece, bar, step}; step in sixteenths, or eighth
+triplets with --shuffle).
 """
 
 import argparse
@@ -14,14 +14,14 @@ import soundfile as sf
 
 from drumlift.kits import SR, _acustico
 
-# Groove de 1 compasso em semicolcheias (16 passos).
+# One-bar groove in sixteenths (16 steps).
 GROOVE = {
     "hihat": [0, 2, 4, 6, 8, 10, 12, 14],
     "snare": [4, 12],
     "kick": [0, 7, 8, 10],
 }
 FILL = {"snare": [8, 9, 10, 11], "tom": [12, 13, 14, 15], "kick": [0, 8], "hihat": [0, 2, 4, 6]}
-# Shuffle em tercinas (12 passos por compasso): chimbal "1 . a 2 . a ..."
+# Triplet shuffle (12 steps per bar): hi-hat "1 . a 2 . a ..."
 SHUFFLE = {"hihat": [0, 2, 3, 5, 6, 8, 9, 11], "snare": [3, 9], "kick": [0, 5, 6]}
 SHUFFLE_FILL = {"snare": [6, 7, 8], "tom": [9, 10, 11], "kick": [0], "hihat": [0, 2, 3, 5]}
 
@@ -30,17 +30,17 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("out", type=Path)
     ap.add_argument("--bpm", type=float, default=104)
-    ap.add_argument("--bpm-end", type=float, default=None, help="acelera/desacelera até esse BPM")
+    ap.add_argument("--bpm-end", type=float, default=None, help="speed up or slow down to this BPM")
     ap.add_argument("--bars", type=int, default=16)
     ap.add_argument("--shuffle", action="store_true")
-    ap.add_argument("--ride", action="store_true", help="a cada 8 compassos, os 4 últimos conduzem no ride")
+    ap.add_argument("--ride", action="store_true", help="every 8 bars, the last 4 keep time on the ride")
     a = ap.parse_args()
 
     rng = np.random.default_rng(1)
     kit = _acustico()
-    lead = 1.3  # silêncio antes do primeiro compasso, pra testar o início
+    lead = 1.3  # silence before the first bar, to test the start
     bpm_end = a.bpm_end or a.bpm
-    # Tempo de cada batida com o andamento mudando linearmente.
+    # Time of each beat with the tempo changing linearly.
     bpms = np.linspace(a.bpm, bpm_end, a.bars * 4 + 1)
     beat_t = lead + np.concatenate([[0], np.cumsum(60 / bpms[:-1])])
     beat = 60 / a.bpm
@@ -75,7 +75,7 @@ def main() -> None:
                 add(kit[piece], t, 0.5 if piece in ("hihat", "ride") and s % (steps // 4) else 0.8)
                 truth.append({"piece": piece, "bar": bar, "step": s})
 
-    # Baixo e acordes (pra ter algo além da bateria pro Demucs separar).
+    # Bass and chords, so Demucs has something besides drums to separate.
     roots = [55.0, 55.0, 43.65, 49.0]
     for bar in range(a.bars):
         f = roots[bar % 4]
@@ -93,7 +93,7 @@ def main() -> None:
     mix /= np.abs(mix).max() / 0.9
     sf.write(a.out, np.stack([mix, mix], axis=1), SR)
     a.out.with_suffix(".truth.json").write_text(json.dumps({"bpm": a.bpm, "steps_per_bar": steps, "hits": truth}))
-    print(f"{a.out}: {a.bars} compassos, {a.bpm}->{bpm_end} BPM, {len(truth)} notas")
+    print(f"{a.out}: {a.bars} bars, {a.bpm}->{bpm_end} BPM, {len(truth)} notes")
 
 
 if __name__ == "__main__":

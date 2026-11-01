@@ -30,7 +30,7 @@ export function createEngine(song, grid) {
   let notes = [], beatTimes = [];
   const st = {
     playing: false, segs: [], voices: [], schedCtx: 0, pausedAt: 0, rate: 1, timer: 0,
-    loop: false, loopA: 0, loopB: 0, kit: "acustico", metro: false, mode: "tab",
+    loop: false, loopA: 0, loopB: 0, kit: "acoustic", metro: false, mode: "tab",
     muted: new Set(), solo: null,
   };
   const listeners = new Set();
@@ -134,11 +134,11 @@ export function createEngine(song, grid) {
   }
   function scheduleRange(seg, a, b) {
     const toCtx = (t) => seg.ctx + (t - seg.song) / st.rate;
-    const kit = kits[st.kit] || kits.acustico || {};
+    const kit = kits[st.kit] || kits.acoustic || {};
     for (let i = lowerBound(notes, a, (n) => n.t); i < notes.length && notes[i].t < b; i++) {
       const n = notes[i];
       if (!audible(n.piece)) continue;
-      voice(kit[n.piece] || kits.acustico?.[n.piece], toCtx(n.t), n.ghost ? 0.25 : 0.35 + 0.65 * n.vel, gains.tab);
+      voice(kit[n.piece] || kits.acoustic?.[n.piece], toCtx(n.t), n.ghost ? 0.25 : 0.35 + 0.65 * n.vel, gains.tab);
     }
     if (st.metro) {
       for (let k = lowerBound(beatTimes, a); k < beatTimes.length && beatTimes[k] < b; k++) {

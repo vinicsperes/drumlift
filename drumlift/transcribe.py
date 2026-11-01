@@ -1,4 +1,4 @@
-"""Transcrição da bateria (ADTOF) e detecção de batidas/compassos (beat_this)."""
+"""Drum transcription (ADTOF) and beat and bar detection (beat_this)."""
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,13 +15,13 @@ FPS = 100
 @dataclass
 class Hit:
     piece: str
-    t: float  # segundos, posição detectada (sem quantizar)
-    conf: float  # ativação do modelo no pico (0-1)
-    vel: float = 1.0  # intensidade estimada (0-1)
+    t: float  # seconds, detected position (not quantized)
+    conf: float  # model activation at the peak (0-1)
+    vel: float = 1.0  # estimated intensity (0-1)
 
 
 def adtof_activations(audio: Path, device: str = "cpu") -> np.ndarray:
-    """Ativações por frame [T, 5] a 100 fps, ordem de ADTOF_CLASSES."""
+    """Per-frame activations [T, 5] at 100 fps, in ADTOF_CLASSES order."""
     from adtof_pytorch import transcribe_to_midi
 
     pred = transcribe_to_midi(audio, "/dev/null", return_activations=True, device=device)
@@ -29,7 +29,7 @@ def adtof_activations(audio: Path, device: str = "cpu") -> np.ndarray:
 
 
 def pick_hits(act: np.ndarray, sensitivity: float = 1.0) -> list[Hit]:
-    """Picos das ativações -> lista de batidas. sensitivity > 1 pega mais notas."""
+    """Activation peaks -> list of hits. sensitivity > 1 catches more notes."""
     from adtof_pytorch import FRAME_RNN_THRESHOLDS, PeakPicker
 
     thresholds = [t / sensitivity for t in FRAME_RNN_THRESHOLDS]
@@ -45,11 +45,11 @@ def pick_hits(act: np.ndarray, sensitivity: float = 1.0) -> list[Hit]:
 
 
 def drop_tom_doubles(hits: list[Hit], win: float = 0.03) -> list[Hit]:
-    """Tira o tom que o ADTOF acende junto com a caixa no mesmo golpe.
+    """Drop the tom ADTOF fires together with the snare on the same stroke.
 
-    Caixa e tom juntos quase não acontecem (são as duas mãos indo pra peças
-    vizinhas), mas o modelo costuma marcar os dois numa caixa grave. Fica só
-    a caixa, a não ser que o tom seja bem mais forte.
+    Snare and tom together are rare (both hands going to neighboring pieces), but
+    the model often marks both on a low snare. Only the snare stays, unless the tom
+    is much stronger.
     """
     snares = np.array([h.t for h in hits if h.piece == "snare"])
     conf = np.array([h.conf for h in hits if h.piece == "snare"])
@@ -66,12 +66,11 @@ def drop_tom_doubles(hits: list[Hit], win: float = 0.03) -> list[Hit]:
 
 
 def split_cymbals(hits: list[Hit], beats: np.ndarray) -> None:
-    """Separa a classe 'cymbal' do ADTOF em crash ou ride.
+    """Split ADTOF's 'cymbal' class into crash or ride.
 
-    Heurística: agrupa os pratos em sequências (intervalo de até 1 tempo entre
-    batidas). Sequência longa e regular é condução (ride); batidas avulsas ou
-    curtas são ataque (crash). Rotular a sequência inteira evita uma linha
-    que pula de um prato pro outro a cada nota.
+    Heuristic: group the cymbals into runs (up to 1 beat between hits). A long,
+    regular run is a ride; single or short ones are crashes. Labeling the whole run
+    avoids a line that jumps between cymbals on every note.
     """
     cym = [h for h in hits if h.piece == "cymbal"]
     if not cym:
@@ -91,7 +90,7 @@ def split_cymbals(hits: list[Hit], beats: np.ndarray) -> None:
             cym[i].piece = "ride" if ride else "crash"
 
 
-# Banda de frequência usada pra medir a força de cada peça na bateria isolada.
+# Frequency band used to measure each piece's strength in the isolated drums.
 _BANDS = {
     "kick": (None, 120),
     "snare": (900, 5000),
@@ -103,10 +102,10 @@ _BANDS = {
 
 
 def estimate_velocity(hits: list[Hit], drums_wav: Path) -> None:
-    """Estima a intensidade de cada batida pela energia na banda da peça.
+    """Estimate each hit's intensity from the energy in the piece's band.
 
-    Normaliza por peça: a batida mais forte (percentil 95) vira 1.0 e
-    24 dB abaixo vira 0.
+    Normalized per piece: the strongest hits (95th percentile) become 1.0 and
+    24 dB below becomes 0.
     """
     audio, sr = sf.read(drums_wav, dtype="float32", always_2d=True)
     mono = audio.mean(axis=1)
@@ -135,7 +134,7 @@ def estimate_velocity(hits: list[Hit], drums_wav: Path) -> None:
 
 
 def track_beats(mix_wav: Path, device: str = "cpu") -> tuple[np.ndarray, np.ndarray]:
-    """Tempos (s) das batidas e dos inícios de compasso."""
+    """Times (s) of the beats and downbeats."""
     from beat_this.inference import File2Beats
 
     beats, downbeats = File2Beats(checkpoint_path="final0", device=device, dbn=False)(str(mix_wav))

@@ -1,10 +1,10 @@
-"""Timbres de bateria sintetizados (sem precisar baixar samples).
+"""Synthesized drum sounds, with no samples to download.
 
 Kits:
-  acustico - aproximação de bateria acústica
-  808      - eletrônico clássico
-  bipes    - um tom diferente por peça; bom pra ouvir cada linha separada
-  custom   - seus samples: pasta com kick.wav, snare.wav, hihat.wav, tom.wav, crash.wav, ride.wav
+  acoustic - approximates an acoustic kit
+  808      - classic electronic
+  beeps    - one pitch per piece; good for hearing each line apart
+  custom   - your samples: a folder with kick.wav, snare.wav, hihat.wav, tom.wav, crash.wav, ride.wav
 """
 
 import shutil
@@ -35,13 +35,13 @@ def _filt(x: np.ndarray, kind: str, f) -> np.ndarray:
 
 
 def _sweep(t: np.ndarray, f_end: float, f_start: float, tau: float) -> np.ndarray:
-    """Seno com o pitch caindo exponencialmente de f_start pra f_end."""
+    """Sine with pitch falling exponentially from f_start to f_end."""
     f = f_end + (f_start - f_end) * np.exp(-t / tau)
     return np.sin(2 * np.pi * np.cumsum(f) / SR)
 
 
 def _metal(t: np.ndarray, base: float = 1.0) -> np.ndarray:
-    """Seis ondas quadradas inarmônicas (o truque do chimbal da 808)."""
+    """Six inharmonic square waves (the 808 hi-hat trick)."""
     freqs = np.array([205.3, 304.4, 369.6, 522.7, 540.0, 800.0]) * base
     return sum(np.sign(np.sin(2 * np.pi * f * t + _rng.uniform(0, 6))) for f in freqs) / 6
 
@@ -50,7 +50,7 @@ def _norm(x: np.ndarray, peak: float = 0.9) -> np.ndarray:
     return (x / (np.abs(x).max() + 1e-9) * peak).astype(np.float32)
 
 
-def _acustico() -> dict[str, np.ndarray]:
+def _acoustic() -> dict[str, np.ndarray]:
     k = {}
     t = _t(0.5)
     click = _filt(_noise(len(t)), "lowpass", 3000) * _env(t, 0.003)
@@ -104,7 +104,7 @@ def _808() -> dict[str, np.ndarray]:
     return k
 
 
-def _bipes() -> dict[str, np.ndarray]:
+def _beeps() -> dict[str, np.ndarray]:
     def bip(freq: float, dur: float, decay: float, peak: float = 0.8) -> np.ndarray:
         t = _t(dur)
         return _norm(np.sin(2 * np.pi * freq * t) * _env(t, decay, 0.002), peak)
@@ -119,11 +119,11 @@ def _bipes() -> dict[str, np.ndarray]:
     }
 
 
-BUILTIN = {"acustico": _acustico, "808": _808, "bipes": _bipes}
+BUILTIN = {"acoustic": _acoustic, "808": _808, "beeps": _beeps}
 
 
 def write_kits(dest: Path, custom: Path | None = None) -> dict[str, dict[str, str]]:
-    """Grava os WAVs de cada kit em dest/<kit>/<peça>.wav e devolve os caminhos relativos."""
+    """Write each kit's WAVs to dest/<kit>/<piece>.wav and return the relative paths."""
     index = {}
     for name, make in BUILTIN.items():
         d = dest / name
@@ -137,19 +137,19 @@ def write_kits(dest: Path, custom: Path | None = None) -> dict[str, dict[str, st
         shutil.rmtree(d, ignore_errors=True)
         d.mkdir(parents=True)
         index["custom"] = {}
-        for piece in index["acustico"]:
+        for piece in index["acoustic"]:
             src = next((p for p in custom.glob(f"{piece}.*") if p.suffix.lower() in (".wav", ".flac", ".ogg", ".mp3")), None)
             if src is None:
-                src = dest / "acustico" / f"{piece}.wav"  # completa o que faltar
+                src = dest / "acoustic" / f"{piece}.wav"  # fill in what's missing
             shutil.copy(src, d / f"{piece}{src.suffix.lower()}")
             index["custom"][piece] = f"kits/custom/{piece}{src.suffix.lower()}"
-    elif (dest / "custom").is_dir():  # mantém o kit custom de uma execução anterior
+    elif (dest / "custom").is_dir():  # keep the custom kit from an earlier run
         index["custom"] = {p.stem: f"kits/custom/{p.name}" for p in sorted((dest / "custom").iterdir())}
     return index
 
 
 def load_kit(root: Path, paths: dict[str, str]) -> dict[str, np.ndarray]:
-    """Lê um kit gravado (mono, 44.1 kHz) pra renderização offline."""
+    """Read a written kit (mono, 44.1 kHz) for offline rendering."""
     import librosa
 
     out = {}

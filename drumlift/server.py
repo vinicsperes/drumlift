@@ -1,4 +1,4 @@
-"""Servidor local do player. Serve a pasta da música e recebe as edições da tab."""
+"""Local player server. Serves the song folder and receives tab edits."""
 
 import json
 import threading
@@ -14,7 +14,7 @@ from .pieces import BY_KEY
 class Handler(SimpleHTTPRequestHandler):
     lock = threading.Lock()
 
-    def log_message(self, fmt, *args):  # silencia o log de cada arquivo servido
+    def log_message(self, fmt, *args):  # silence the per-file log
         pass
 
     def end_headers(self):
@@ -51,13 +51,13 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
-        except Exception as e:  # devolve o erro pro player mostrar
+        except Exception as e:  # hand the error to the player to show
             self.send_error(400, str(e))
 
 
 def serve(outdir: Path, port: int = 8765, open_browser: bool = True) -> None:
     if not (outdir / "song.json").exists():
-        raise SystemExit(f"{outdir} não tem song.json — rode `drumlift run` antes.")
+        raise SystemExit(f"{outdir} has no song.json. Run `drumlift run` first.")
     handler = partial(Handler, directory=str(outdir))
     for p in range(port, port + 20):
         try:
@@ -66,9 +66,9 @@ def serve(outdir: Path, port: int = 8765, open_browser: bool = True) -> None:
         except OSError:
             continue
     else:
-        raise SystemExit("Nenhuma porta livre.")
+        raise SystemExit("No free port.")
     url = f"http://127.0.0.1:{httpd.server_port}/"
-    print(f"Player em {url}  (Ctrl+C pra sair)", flush=True)
+    print(f"Player at {url}  (Ctrl+C to quit)", flush=True)
     if open_browser:
         threading.Timer(0.5, webbrowser.open, [url]).start()
     try:

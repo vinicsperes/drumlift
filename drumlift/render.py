@@ -1,4 +1,4 @@
-"""Renderiza a tab como áudio, nos tempos reais da música."""
+"""Render the tab as audio, at the song's real times."""
 
 from pathlib import Path
 
@@ -24,7 +24,7 @@ def synth_track(grid: Grid, notes: list[dict], kit: dict[str, np.ndarray], durat
 
 
 def write_renders(outdir: Path, grid: Grid, notes: list[dict], kit: dict[str, np.ndarray]) -> None:
-    """tab_synth.wav (só a tab) e tab_with_band.wav (banda sem bateria + tab)."""
+    """tab_synth.wav (the tab alone) and tab_with_band.wav (band without drums + tab)."""
     band, _ = sf.read(outdir / "no_drums.wav", dtype="float32", always_2d=True)
     duration = len(band) / SR
     drums = synth_track(grid, notes, kit, duration)

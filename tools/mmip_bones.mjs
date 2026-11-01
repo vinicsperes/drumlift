@@ -1,11 +1,11 @@
-// Lê o take.fbx de uma performance MMIP com o FBXLoader do three.js e grava a
-// posição e a rotação (no mundo) dos ossos que interessam, quadro a quadro,
-// a 60 Hz. Quem usa é o tools/mmip_moves.py; roda no Node:
+// Reads a MMIP performance's take.fbx with three.js's FBXLoader and writes the world
+// position and rotation of the bones we need, frame by frame, at 60 Hz. Used by
+// tools/mmip_moves.py; runs on Node:
 //
 //   node tools/mmip_bones.mjs songs/mmip/01 [songs/mmip/02 ...]
 //
-// Saída na mesma pasta: bones.f32 (float32, quadros × ossos × [x y z qx qy qz qw],
-// em metros, eixos do FBX) e bones.json (fps, quadros, nomes dos ossos).
+// Output in the same folder: bones.f32 (float32, frames × bones × [x y z qx qy qz qw],
+// in meters, FBX axes) and bones.json (fps, frames, bone names).
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -27,7 +27,7 @@ const BONES = [
   ]),
 ];
 
-// o FBXLoader avisa de cada vértice com mais de 4 pesos; aqui só o movimento importa
+// FBXLoader warns about each vertex with over 4 weights; only the motion matters here
 const warn = console.warn;
 console.warn = (...a) => { if (!String(a[0]).includes("skinning weights")) warn(...a); };
 
@@ -40,7 +40,7 @@ for (const dir of process.argv.slice(2)) {
   mixer.clipAction(clip).play();
   const bones = BONES.map((n) => {
     const b = obj.getObjectByName(n);
-    if (!b) throw new Error(`${dir}: osso ${n} não encontrado`);
+    if (!b) throw new Error(`${dir}: bone ${n} not found`);
     return b;
   });
   const n = Math.floor(clip.duration * FPS);
@@ -57,5 +57,5 @@ for (const dir of process.argv.slice(2)) {
   }
   writeFileSync(join(dir, "bones.f32"), Buffer.from(out.buffer));
   writeFileSync(join(dir, "bones.json"), JSON.stringify({ fps: FPS, frames: n, bones: BONES }));
-  console.log(`${dir}: ${n} quadros, ${bones.length} ossos`);
+  console.log(`${dir}: ${n} frames, ${bones.length} bones`);
 }

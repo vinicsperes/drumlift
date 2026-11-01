@@ -1,4 +1,4 @@
-"""Peças da bateria: ordem de exibição na tab, símbolos e notas General MIDI."""
+"""Drum pieces: display order in the tab, symbols and General MIDI notes."""
 
 from dataclasses import dataclass
 
@@ -6,20 +6,20 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class Piece:
     key: str
-    label: str  # rótulo da linha na tab
-    name: str  # nome em português
-    symbol: str  # caractere na tab
-    gm_note: int  # nota General MIDI (canal 10)
+    label: str  # line label in the tab
+    name: str  # display name
+    symbol: str  # character in the tab
+    gm_note: int  # General MIDI note (channel 10)
 
 
-# De cima pra baixo, como numa tab de bateria normal.
+# Top to bottom, like a normal drum tab.
 PIECES = [
-    Piece("crash", "CR", "Prato de ataque", "X", 49),
-    Piece("ride", "RD", "Prato de condução", "x", 51),
-    Piece("hihat", "HH", "Chimbal", "x", 42),
-    Piece("snare", "SD", "Caixa", "o", 38),
+    Piece("crash", "CR", "Crash", "X", 49),
+    Piece("ride", "RD", "Ride", "x", 51),
+    Piece("hihat", "HH", "Hi-hat", "x", 42),
+    Piece("snare", "SD", "Snare", "o", 38),
     Piece("tom", "T", "Tom", "o", 47),
-    Piece("kick", "BD", "Bumbo", "o", 36),
+    Piece("kick", "BD", "Kick", "o", 36),
 ]
 
 BY_KEY = {p.key: p for p in PIECES}
@@ -27,6 +27,6 @@ ORDER = [p.key for p in PIECES]
 
 GHOST_SYMBOL = "g"
 
-# Saídas do ADTOF (LABELS_5 = [35, 38, 47, 42, 49]) -> peças.
-# A classe "cymbal" é separada em crash/ride depois, por heurística de densidade.
+# ADTOF outputs (LABELS_5 = [35, 38, 47, 42, 49]) -> pieces.
+# The "cymbal" class is split into crash and ride later, by a density heuristic.
 ADTOF_CLASSES = ["kick", "snare", "tom", "hihat", "cymbal"]

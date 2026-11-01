@@ -1,4 +1,4 @@
-"""Orquestra as etapas. As etapas pesadas ficam em cache na pasta da música."""
+"""Runs the stages. The heavy ones are cached in the song's folder."""
 
 import json
 import re
@@ -18,7 +18,7 @@ from .pieces import BY_KEY, ORDER
 
 def slugify(name: str) -> str:
     s = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
-    return re.sub(r"[^a-zA-Z0-9]+", "-", s).strip("-").lower() or "musica"
+    return re.sub(r"[^a-zA-Z0-9]+", "-", s).strip("-").lower() or "song"
 
 
 def log(msg: str) -> None:
@@ -29,29 +29,29 @@ def run(src: str, out_root: Path, *, model: str = "htdemucs", device: str = "cpu
         subdiv: int | None = None, sensitivity: float = 1.0, source: str = "drums",
         custom_kit: Path | None = None, force: bool = False) -> Path:
     if re.match(r"https?://", src):
-        log("Baixando áudio...")
+        log("Downloading audio...")
         src_path = separate.download(src, out_root / "_downloads")
     else:
         src_path = Path(src).expanduser()
         if not src_path.exists():
-            raise SystemExit(f"Arquivo não encontrado: {src_path}")
+            raise SystemExit(f"File not found: {src_path}")
     title = src_path.stem
     outdir = out_root / slugify(title)
     outdir.mkdir(parents=True, exist_ok=True)
 
     if force or not (outdir / "drums.wav").exists():
-        log(f"Convertendo {src_path.name}")
+        log(f"Converting {src_path.name}")
         separate.to_wav(src_path, outdir / "mix.wav")
-        log(f"Isolando a bateria com Demucs ({model}, {device}) — demora uns minutos na CPU")
+        log(f"Isolating the drums with Demucs ({model}, {device}), takes a few minutes on CPU")
         t0 = time.time()
         separate.separate_drums(outdir / "mix.wav", outdir, model=model, device=device)
-        log(f"  feito em {time.time() - t0:.0f}s")
+        log(f"  done in {time.time() - t0:.0f}s")
     else:
-        log("Bateria já isolada (cache)")
+        log("Drums already isolated (cache)")
 
     beats_file = outdir / "beats.json"
     if force or not beats_file.exists():
-        log("Detectando batidas e compassos (beat_this)")
+        log("Detecting beats and bars (beat_this)")
         beats, downbeats = transcribe.track_beats(outdir / "mix.wav", device=device)
         beats_file.write_text(json.dumps({"beats": beats.tolist(), "downbeats": downbeats.tolist()}))
 
@@ -63,20 +63,20 @@ def run(src: str, out_root: Path, *, model: str = "htdemucs", device: str = "cpu
 def transcribe_stage(outdir: Path, source: str, device: str = "cpu", force: bool = False) -> None:
     act_file = outdir / f"activations_{source}.npy"
     if force or not act_file.exists():
-        log(f"Transcrevendo a bateria (ADTOF, a partir de {'bateria isolada' if source == 'drums' else 'mix'})")
+        log(f"Transcribing the drums (ADTOF, from {'isolated drums' if source == 'drums' else 'mix'})")
         t0 = time.time()
         act = transcribe.adtof_activations(outdir / ("drums.wav" if source == "drums" else "mix.wav"), device)
         np.save(act_file, act)
-        log(f"  feito em {time.time() - t0:.0f}s")
+        log(f"  done in {time.time() - t0:.0f}s")
 
 
 def build(outdir: Path, title: str, *, subdiv: int | None = None, sensitivity: float = 1.0,
           source: str = "drums", custom_kit: Path | None = None, player: bool = True) -> Path:
-    """Etapa rápida: das ativações em cache até tab, MIDI, áudios e player.
+    """Fast stage: from the cached activations to tab, MIDI, audio and player.
 
-    Com player=False grava só song.json, tab.txt e drums.mid (pra medir rápido).
+    With player=False it writes only song.json, tab.txt and drums.mid (for quick measuring).
     """
-    log("Montando a tab")
+    log("Building the tab")
     raw = json.loads((outdir / "beats.json").read_text())
     act = np.load(outdir / f"activations_{source}.npy")
     duration = sf.info(outdir / "mix.wav").duration
@@ -96,13 +96,13 @@ def build(outdir: Path, title: str, *, subdiv: int | None = None, sensitivity: f
 
     counts = {BY_KEY[k].name: sum(n["piece"] == k for n in notes) for k in ORDER}
     bpm, lo, hi = grid.tempo()
-    log(f"~{bpm:.0f} BPM, {grid.beats_per_bar}/4, {grid.n_bars} compassos, grade {grid.subdiv}/batida")
-    log("Notas: " + ", ".join(f"{k} {v}" for k, v in counts.items() if v))
+    log(f"~{bpm:.0f} BPM, {grid.beats_per_bar}/4, {grid.n_bars} bars, grid {grid.subdiv}/beat")
+    log("Notes: " + ", ".join(f"{k} {v}" for k, v in counts.items() if v))
     return outdir
 
 
 def save(outdir: Path, grid: Grid, notes: list[dict], meta: dict, render_audio: bool = True) -> None:
-    """Grava song.json + tab.txt + drums.mid + áudios renderizados."""
+    """Write song.json, tab.txt, drums.mid and the rendered audio."""
     bpm, lo, hi = grid.tempo()
     used = [k for k in ORDER if any(n["piece"] == k for n in notes)]
     song = {
@@ -122,7 +122,7 @@ def save(outdir: Path, grid: Grid, notes: list[dict], meta: dict, render_audio: 
     (outdir / "tab.txt").write_text(tab.render_text(grid, notes, meta["title"]))
     tab.write_midi(grid, notes, outdir / "drums.mid", meta["title"])
     if render_audio:
-        kit = kits.load_kit(outdir, meta["kits"]["acustico"])
+        kit = kits.load_kit(outdir, meta["kits"]["acoustic"])
         render.write_renders(outdir, grid, notes, kit)
 
 

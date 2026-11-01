@@ -1,19 +1,18 @@
-"""Baixa performances de bateria da base MMIP e converte pro formato do drumlift.
+"""Download drum performances from the MMIP database and convert them to drumlift's format.
 
-A MMIP (Universidade de Chipre / CYENS) tem captura de movimento de corpo inteiro
-(com os dedos) de um baterista de rock, sincronizada com MIDI e áudio.
-Licença CC BY-NC-SA 4.0: uso não comercial, com crédito.
-Dados obtidos de https://mmip.cs.ucy.ac.cy, a base MMIP (Multi-Modal Instrument
-Performances) da Universidade de Chipre e do CYENS – Centre of Excellence.
+MMIP (University of Cyprus / CYENS) has full-body motion capture, fingers included, of
+a rock drummer, in sync with MIDI and audio. License CC BY-NC-SA 4.0: non-commercial,
+with credit. Data from https://mmip.cs.ucy.ac.cy, the MMIP (Multi-Modal Instrument
+Performances) database of the University of Cyprus and CYENS Centre of Excellence.
 
-uso (no ambiente do projeto):
+usage (in the project environment):
   uv run python tools/mmip.py list
   uv run python tools/mmip.py fetch 1 [2 ...]
 
-Cada performance vai pra songs/mmip/<nn>/ (fora do git): take.fbx (movimento),
-take.mid, audio.wav, meta.json e song.json, com as notas do MIDI no formato do
-player e o tempo real de cada golpe (não o da grade), pra comparar o nosso
-baterista com o real nota por nota.
+Each performance goes to songs/mmip/<nn>/ (outside git): take.fbx (motion), take.mid,
+audio.wav, meta.json and song.json, with the MIDI notes in the player's format and the
+real time of each stroke (not the grid's), to compare our drummer with the real one
+note by note.
 """
 
 import argparse
@@ -35,10 +34,10 @@ from drumlift.pieces import BY_KEY, ORDER
 
 BASE = "https://mmip.cs.ucy.ac.cy"
 ROOT = Path(__file__).resolve().parent.parent / "songs" / "mmip"
-CREDIT = ("Dados obtidos de https://mmip.cs.ucy.ac.cy, a base MMIP (Multi-Modal Instrument Performances) "
-          "da Universidade de Chipre e do CYENS – Centre of Excellence. CC BY-NC-SA 4.0.")
+CREDIT = ("Data from https://mmip.cs.ucy.ac.cy, the MMIP (Multi-Modal Instrument Performances) database "
+          "of the University of Cyprus and CYENS Centre of Excellence. CC BY-NC-SA 4.0.")
 
-# Nota MIDI (GM, kit eletrônico) -> (peça, peça física). 44 é o pedal do chimbal.
+# MIDI note (GM, electronic kit) -> (piece, physical piece). 44 is the hi-hat pedal.
 NOTE_MAP = {
     35: ("kick", "kick"), 36: ("kick", "kick"),
     37: ("snare", "snare"), 38: ("snare", "snare"), 40: ("snare", "snare"),
@@ -52,8 +51,8 @@ NOTE_MAP = {
 
 
 def _open(path: str):
-    # O servidor da MMIP não manda o certificado intermediário, então a
-    # verificação falha fora do navegador. Só pra este host, sem verificação.
+    # The MMIP server doesn't send the intermediate certificate, so verification
+    # fails outside a browser. For this host only, no verification.
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
@@ -77,8 +76,8 @@ def download(path: str, dest: Path) -> None:
 
 
 def fbx_paths(path: str) -> list[str]:
-    """Caminho do FBX e, de reserva, o nome tirado da pasta: a lista da base às
-    vezes aponta pro arquivo de outra gravação (Drums_DD_MM_YY_HH_MM_SS ->
+    """FBX path and, as a fallback, the name derived from the folder: the database list
+    sometimes points to another recording's file (Drums_DD_MM_YY_HH_MM_SS ->
     Drums_HH-MM-SS__20YY-MM-DD.fbx)."""
     folder = path.rsplit("/", 1)[0]
     m = re.search(r"Drums_(\d\d)_(\d\d)_(\d\d)_(\d\d)_(\d\d)_(\d\d)$", folder)
@@ -90,7 +89,7 @@ def fbx_paths(path: str) -> list[str]:
 
 
 def midi_notes(path: Path) -> list[tuple[float, int, int]]:
-    """(tempo em s, nota, velocidade) de cada note_on, com o mapa de andamento aplicado."""
+    """(time in s, note, velocity) of each note_on, with the tempo map applied."""
     t, out = 0.0, []
     for msg in mido.MidiFile(path):
         t += msg.time
@@ -100,7 +99,7 @@ def midi_notes(path: Path) -> list[tuple[float, int, int]]:
 
 
 def convert(folder: Path, title: str) -> dict:
-    """MIDI + áudio -> song.json (grade das batidas do áudio, tempos reais do MIDI)."""
+    """MIDI + audio -> song.json (grid from the audio's beats, real times from the MIDI)."""
     raw = midi_notes(folder / "take.mid")
     hits, pedal, unknown = [], [], {}
     for t, note, vel in raw:
@@ -120,7 +119,7 @@ def convert(folder: Path, title: str) -> dict:
     beats, bpb = build_beats(beats_raw, downbeats, duration)
     grid, notes = quantize(hits, beats, bpb, None)
 
-    # volta o tempo real e a peça física (tom 1, tom 2, surdo) de cada nota
+    # restore the real time and physical piece (tom 1, tom 2, floor) of each note
     by_piece: dict[str, list] = {}
     for h in hits:
         by_piece.setdefault(h.piece, []).append(h)
@@ -154,8 +153,8 @@ def convert(folder: Path, title: str) -> dict:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("list", help="lista as performances de bateria")
-    f = sub.add_parser("fetch", help="baixa e converte performances (números da lista)")
+    sub.add_parser("list", help="list the drum performances")
+    f = sub.add_parser("fetch", help="download and convert performances (numbers from the list)")
     f.add_argument("ids", type=int, nargs="+")
     a = ap.parse_args()
 
@@ -169,12 +168,12 @@ def main() -> None:
 
     for i in a.ids:
         if not 1 <= i <= len(takes):
-            sys.exit(f"não existe a performance {i} (1 a {len(takes)})")
+            sys.exit(f"no performance {i} (1 to {len(takes)})")
         x = takes[i - 1]
         folder = ROOT / f"{i:02d}"
         folder.mkdir(parents=True, exist_ok=True)
         d = x["Downloads"]
-        print(f"[{i}] baixando...", flush=True)
+        print(f"[{i}] downloading...", flush=True)
         for path in fbx_paths(d["FBX"]):
             try:
                 download(path, folder / "take.fbx")
@@ -183,12 +182,12 @@ def main() -> None:
                 if e.code != 404:
                     raise
         if not (folder / "take.fbx").exists():
-            print(f"[{i}] o FBX não está no servidor, pulando", flush=True)
+            print(f"[{i}] the FBX isn't on the server, skipping", flush=True)
             continue
         download(d["MIDI"], folder / "take.mid")
         download(d["AUDIO"], folder / "audio.wav")
         m = x["Music"]
-        title = f"MMIP {i:02d} — {m.get('Genre', '').strip()} {m.get('BPM', '')} BPM"
+        title = f"MMIP {i:02d}: {m.get('Genre', '').strip()} {m.get('BPM', '')} BPM"
         (folder / "meta.json").write_text(json.dumps({**x, "credit": CREDIT}, ensure_ascii=False, indent=1))
         info = convert(folder, title)
         print(f"[{i}] {folder}: {info}", flush=True)

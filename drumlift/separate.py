@@ -1,4 +1,4 @@
-"""Preparação do áudio e separação da bateria com Demucs."""
+"""Audio preparation and drum separation with Demucs."""
 
 import shutil
 import subprocess
@@ -11,12 +11,12 @@ SR = 44100
 
 
 def download(url: str, dest_dir: Path) -> Path:
-    """Baixa o áudio de uma URL com yt-dlp (precisa estar instalado)."""
+    """Download the audio of a URL with yt-dlp (must be installed)."""
     exe = shutil.which("yt-dlp")
     if exe is None:
         raise SystemExit(
-            "Pra usar link você precisa do yt-dlp: `uv tool install yt-dlp` "
-            "(ou passe um arquivo de áudio local)."
+            "Links need yt-dlp: `uv tool install yt-dlp` "
+            "(or pass a local audio file)."
         )
     dest_dir.mkdir(parents=True, exist_ok=True)
     template = str(dest_dir / "%(title)s.%(ext)s")
@@ -29,7 +29,7 @@ def download(url: str, dest_dir: Path) -> Path:
 
 
 def to_wav(src: Path, dst: Path) -> None:
-    """Converte qualquer formato que o ffmpeg leia para WAV 44.1 kHz estéreo."""
+    """Convert any format ffmpeg reads to 44.1 kHz stereo WAV."""
     subprocess.run(
         ["ffmpeg", "-y", "-loglevel", "error", "-i", str(src),
          "-vn", "-ac", "2", "-ar", str(SR), "-c:a", "pcm_s16le", str(dst)],
@@ -39,7 +39,7 @@ def to_wav(src: Path, dst: Path) -> None:
 
 def separate_drums(mix_wav: Path, outdir: Path, model: str = "htdemucs",
                    device: str = "cpu", shifts: int = 1) -> None:
-    """Gera drums.wav (bateria isolada) e no_drums.wav (todo o resto)."""
+    """Write drums.wav (isolated drums) and no_drums.wav (everything else)."""
     from demucs.api import Separator
 
     sep = Separator(model=model, device=device, shifts=shifts, progress=True)
@@ -48,7 +48,7 @@ def separate_drums(mix_wav: Path, outdir: Path, model: str = "htdemucs",
     rest = sum(v for k, v in stems.items() if k != "drums").numpy()
     mix = wav.numpy()
 
-    # Mesmo ganho pra tudo, assim os volumes continuam comparáveis no player.
+    # Same gain for everything, so the volumes stay comparable in the player.
     peak = max(np.abs(x).max() for x in (mix, drums, rest))
     gain = 0.99 / peak if peak > 0.99 else 1.0
     for name, x in (("mix", mix), ("drums", drums), ("no_drums", rest)):
