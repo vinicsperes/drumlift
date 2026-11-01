@@ -88,8 +88,6 @@
       </select></label>
       <button id="loop" class="toggle" title="Repetir o compasso atual (L)">Loop</button>
       <button id="ring" class="toggle" title="Anel que encolhe até a peça no instante do golpe (N)">Antecipação</button>
-      <label>Estilo <select id="style"></select></label>
-      <label>Gato <select id="cat"></select></label>
     </div>
     <div id="cams" class="opts"><span class="lbl">Câmera</span></div>
     <div id="mutes" class="opts"><span class="lbl">Escurecer</span></div>
@@ -98,13 +96,13 @@
 <main id="stage"></main>
 <footer class="help">
   <kbd>espaço</kbd> tocar/pausar · <kbd>←</kbd><kbd>→</kbd> compasso · <kbd>L</kbd> loop ·
-  <kbd>N</kbd> antecipação · <kbd>1</kbd>–<kbd>4</kbd> câmeras · <kbd>E</kbd> estilo · arraste pra girar, role pra aproximar.
+  <kbd>N</kbd> antecipação · <kbd>1</kbd>–<kbd>4</kbd> câmeras · arraste pra girar, role pra aproximar.
   Página de desenvolvimento: sem áudio, o relógio é de mentira.
 </footer>
 
 <script type="module">
 import {
-  mountKit3D, CAMERA_NAMES, CAMERA_LABELS, STYLE_NAMES, STYLE_LABELS, CAT_COLOR_NAMES, CAT_COLOR_LABELS,
+  mountKit3D, CAMERA_NAMES, CAMERA_LABELS,
 } from "./kit3d/kit3d.js";
 
 const $ = (s) => document.querySelector(s);
@@ -169,7 +167,7 @@ function toggleLoop() {
 // ---------- vista 3D ----------
 const params = new URLSearchParams(location.search);
 const view = mountKit3D($("#stage"), {
-  song: null, getTime: songTime, style: params.get("style") || undefined, catColors: params.get("cat") || undefined,
+  song: null, getTime: songTime,
   moves: params.get("moves") !== "0", // ?moves=0: só o modelo procedural
 });
 window.view = view;
@@ -187,15 +185,6 @@ function setCamera(name) {
   for (const b of document.querySelectorAll("[data-cam]")) b.classList.toggle("on", b.dataset.cam === name);
 }
 $("#cams").addEventListener("click", (e) => { const n = e.target.dataset.cam; if (n) setCamera(n); });
-
-for (const name of STYLE_NAMES) $("#style").add(new Option(STYLE_LABELS[name], name));
-for (const name of CAT_COLOR_NAMES) $("#cat").add(new Option(CAT_COLOR_LABELS[name], name));
-$("#style").value = view.style;
-$("#cat").value = CAT_COLOR_NAMES.includes(params.get("cat")) ? params.get("cat") : CAT_COLOR_NAMES[0];
-const syncCat = () => { $("#cat").disabled = view.style !== "pelucia"; };
-syncCat();
-$("#style").addEventListener("change", (e) => { view.setStyle(e.target.value); syncCat(); });
-$("#cat").addEventListener("change", (e) => view.setCatColors(e.target.value));
 
 for (const p of PIECES) {
   const b = document.createElement("button");
@@ -271,10 +260,6 @@ addEventListener("keydown", (e) => {
   else if (k === "arrowright") { e.preventDefault(); seek(barTime(barAt(songTime() + 0.03) + 1) - 0.03); }
   else if (k === "l") toggleLoop();
   else if (k === "n") toggleRing();
-  else if (k === "e") {
-    const next = STYLE_NAMES[(STYLE_NAMES.indexOf(view.style) + 1) % STYLE_NAMES.length];
-    view.setStyle(next); $("#style").value = next; syncCat();
-  }
   else if (k >= "1" && k <= "4") setCamera(CAMERA_NAMES[+k - 1]);
 });
 

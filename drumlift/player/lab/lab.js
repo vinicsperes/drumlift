@@ -2,7 +2,7 @@
 // sincronizada com MIDI) ao lado do nosso baterista tocando as mesmas notas,
 // no mesmo relógio, e as mesmas métricas medidas nos dois.
 //
-//   /drumlift/player/lab.html?take=/songs/mmip/01/&style=manequim
+//   /drumlift/player/lab.html?take=/songs/mmip/01/
 //   (a pasta vem de `uv run python tools/mmip.py fetch 1`)
 
 import {
@@ -13,7 +13,7 @@ import { OrbitControls } from "../vendor/OrbitControls.js";
 import { createEngine } from "../app/audio.js";
 import { $, fmt, makeGrid } from "../app/util.js";
 import { mountKit3D } from "../kit3d/kit3d.js";
-import { themeFor } from "../kit3d/theme.js";
+import { MOCAP } from "../kit3d/theme.js";
 import { loadReal } from "./real.js";
 import { HAND_ID, inferSticks } from "./sticks.js";
 import { GRIP, SKEL } from "../kit3d/skeleton.js";
@@ -46,9 +46,8 @@ async function boot() {
   engine.setMode("original");
 
   // ---------- nosso ----------
-  let style = ["manequim", "pelucia"].includes(params.get("style")) ? params.get("style") : "manequim";
   // ?moves=0: só o modelo procedural (pra comparar com os golpes do baterista real)
-  const ours = mountKit3D($("#ours"), { song, getTime: () => engine.time, style, camera: "frente", legend: false, moves: params.get("moves") !== "0" });
+  const ours = mountKit3D($("#ours"), { song, getTime: () => engine.time, camera: "frente", legend: false, moves: params.get("moves") !== "0" });
 
   // ---------- real ----------
   status("carregando o baterista real (FBX, ~20 MB)", 0.15);
@@ -96,15 +95,6 @@ async function boot() {
     if (e.key === "ArrowRight") engine.seek(engine.time + 2);
     if (e.key === "ArrowLeft") engine.seek(engine.time - 2);
   });
-  $("#styles").onclick = (e) => {
-    const s = e.target.dataset.style;
-    if (!s) return;
-    style = s;
-    ours.setStyle(s);
-    for (const b of document.querySelectorAll("#styles [data-style]")) b.classList.toggle("on", b.dataset.style === s);
-  };
-  for (const b of document.querySelectorAll("#styles [data-style]")) b.classList.toggle("on", b.dataset.style === style);
-
   const loop = () => {
     requestAnimationFrame(loop);
     const t = engine.time;
@@ -152,7 +142,7 @@ function buildRealScene(real, sk, S, lat) {
   host.append(renderer.domElement);
   renderer.domElement.style.cssText = "display:block;width:100%;height:100%";
   const scene = new Scene();
-  const th = themeFor(false);
+  const th = MOCAP;
   scene.background = new Color("#ece8e1");
   scene.add(new HemisphereLight("#ffffff", "#c9beb0", 1.6));
   const key = new DirectionalLight("#fff4e6", 2.2);

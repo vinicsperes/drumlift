@@ -1,10 +1,10 @@
 // Bateria 3D: um baterista tocando a tab em sincronia com a música.
 //
 //   import { mountKit3D } from "./kit3d/kit3d.js";
-//   const view = mountKit3D(container, { song, getTime: () => seconds, style: "pelucia" });
+//   const view = mountKit3D(container, { song, getTime: () => seconds });
 //   view.setSong(song); view.setCamera("baterista" | "frente" | "lado" | "cima");
 //   view.setMuted(new Set(["hihat"])); view.setAnticipation(true);
-//   view.setStyle("pelucia" | "manequim"); view.style; view.dispose();
+//   view.dispose();
 //   view.setInsets({ top, right, bottom, left }); // px cobertos por painéis por cima
 //   await view.planReady; // performance assada a partir da captura (moves/)
 //
@@ -17,7 +17,7 @@
 import { PerspectiveCamera, Scene, Vector3, WebGLRenderer } from "../vendor/three.module.min.js";
 import { OrbitControls } from "../vendor/OrbitControls.js";
 import { prepareSong } from "./timeline.js";
-import { DEFAULT_STYLE, STYLE_NAMES, createStyle } from "./styles.js";
+import { createMocap } from "./mocap.js";
 import { CAMERA_NAMES, cameraPose } from "./cameras.js";
 import { LIMB_NAMES } from "./theme.js";
 
@@ -30,13 +30,11 @@ const SLOW_WINDOW_MS = 2000;
 const MOVES_URL = new URL("./moves/mmip.json", import.meta.url).href;
 
 export { CAMERA_NAMES, CAMERA_LABELS } from "./cameras.js";
-export { STYLE_NAMES, STYLE_LABELS } from "./styles.js";
-export { CAT_COLOR_NAMES, CAT_COLOR_LABELS } from "./felt.js";
 
 /**
  * @param {HTMLElement} container elemento com tamanho definido; o canvas ocupa ele todo
  * @param {{song?: object, getTime: () => number, camera?: string, anticipation?: boolean,
- *          style?: string, catColors?: string, transparent?: boolean, legend?: boolean,
+ *          transparent?: boolean, legend?: boolean,
  *          insets?: {top?: number, right?: number, bottom?: number, left?: number}}} opts
  */
 export function mountKit3D(container, opts = {}) {
@@ -54,11 +52,10 @@ export function mountKit3D(container, opts = {}) {
     root.style.cssText += "display:flex;align-items:center;justify-content:center;padding:16px;text-align:center;opacity:.7;";
     root.textContent = "Não deu pra abrir a bateria 3D: o navegador não liberou o WebGL.";
     const noop = () => {};
-    const wanted = STYLE_NAMES.includes(opts.style) ? opts.style : DEFAULT_STYLE;
     return {
-      setSong: noop, setCamera: noop, setMuted: noop, setAnticipation: noop, setStyle: noop, setCatColors: noop,
+      setSong: noop, setCamera: noop, setMuted: noop, setAnticipation: noop, 
       setInsets: noop,
-      get style() { return wanted; }, dispose: () => root.remove(),
+      dispose: () => root.remove(),
     };
   }
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -71,9 +68,7 @@ export function mountKit3D(container, opts = {}) {
 
   const scene = new Scene();
   const camera = new PerspectiveCamera(FOV, 1, 0.05, 30);
-  let styleName = STYLE_NAMES.includes(opts.style) ? opts.style : DEFAULT_STYLE;
-  let catColors = opts.catColors;
-  let style = createStyle(styleName, { renderer, scene }, { catColors });
+  const style = createMocap({ renderer, scene });
   scene.add(style.group);
 
   const controls = new OrbitControls(camera, canvas);
@@ -153,6 +148,7 @@ export function mountKit3D(container, opts = {}) {
     camera.updateProjectionMatrix();
   }
   function placeCamera(name, animate) {
+    style.setCamera(name);
     const { fw, fh } = freeRect();
     const freeFov = height ? (2 * Math.atan(Math.tan((FOV * Math.PI) / 360) * (fh / height)) * 180) / Math.PI : FOV;
     cameraPose(name, fw / fh, freeFov, tmpPos, tmpTarget);
@@ -292,22 +288,6 @@ export function mountKit3D(container, opts = {}) {
     planDone?.(plan);
   }
 
-  // ---------- estilo ----------
-  // Troca ao vivo: câmera, controles, tempo e peças silenciadas ficam; o estilo
-  // anterior libera geometrias, materiais e texturas antes do novo nascer.
-  function setStyle(name) {
-    if (!STYLE_NAMES.includes(name) || name === styleName || disposed) return;
-    scene.remove(style.group);
-    style.dispose();
-    styleName = name;
-    style = createStyle(name, { renderer, scene }, { catColors });
-    scene.add(style.group);
-    style.rig.setPlan(plan);
-    style.setMuted(muted);
-    applyTheme();
-    dirty = true;
-  }
-
   // Compatível com o _debug.avatar de antes: esqueleto + ponta da baqueta.
   const avatarView = () => ({
     ...style.avatar, configs: style.rig.configs, arms: style.rig.arms, legs: style.rig.legs,
@@ -327,13 +307,7 @@ export function mountKit3D(container, opts = {}) {
     },
     setMuted(pieces) { muted = new Set(pieces || []); style.setMuted(muted); dirty = true; },
     setAnticipation(on) { anticipation = !!on; dirty = true; },
-    setStyle,
     /** Paleta do gato ("laranja" | "cinza" | "frajola"); por enquanto só na página de desenvolvimento. */
-    setCatColors(name) {
-      catColors = name;
-      style.setCatColors?.(name);
-      dirty = true;
-    },
     /** Pedaços do canvas cobertos por painéis da página (px): o baterista centraliza no resto. */
     setInsets(next) {
       Object.assign(insets, next || {});
@@ -342,7 +316,6 @@ export function mountKit3D(container, opts = {}) {
       dirty = true;
     },
     get camera() { return camName; },
-    get style() { return styleName; },
     dispose() {
       if (disposed) return;
       disposed = true;

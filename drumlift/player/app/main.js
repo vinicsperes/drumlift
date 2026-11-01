@@ -6,13 +6,11 @@ import { createEngine } from "./audio.js";
 import { createLane } from "./lane.js";
 import { createSheet } from "./sheet.js";
 import { prepareSong } from "../kit3d/timeline.js";
-import { themeFor } from "../kit3d/theme.js";
+import { MOCAP } from "../kit3d/theme.js";
 
 const PIECES = ["crash", "ride", "hihat", "snare", "tom", "kick"];
 const CAMS = ["frente", "baterista", "lado", "cima"];
 const CAM_LABEL = { frente: "Frente", baterista: "Baterista", lado: "Lado", cima: "Cima" };
-const STYLES = ["pelucia", "manequim"];
-const STYLE_LABEL = { pelucia: "Pelúcia", manequim: "Manequim" };
 const KIT_LABEL = { acustico: "Acústico", 808: "808", bipes: "Bipes", custom: "Seus samples" };
 
 const state = { song: null, notes: [], muted: new Set(), solo: null, anchorBar: 0, loopPicked: false };
@@ -118,7 +116,6 @@ async function mount3D() {
       song: songWithNotes(),
       getTime: () => engine.time,
       camera: CAMS.includes(pref("kit3d.camera")) ? pref("kit3d.camera") : "frente",
-      style: STYLES.includes(pref("kit3d.style")) ? pref("kit3d.style") : "pelucia",
       anticipation: pref("kit3d.anticipation") === "1",
       transparent: true,
       legend: false,
@@ -170,7 +167,7 @@ function hexToRgba(hex, a) {
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 }
 function applyTheme() {
-  const th = themeFor(darkMQ.matches);
+  const th = MOCAP;
   const cs = getComputedStyle(document.documentElement);
   const v = (name) => cs.getPropertyValue(name).trim();
   const card = v("--dock-solid");
@@ -205,14 +202,6 @@ function setupPanel() {
 
   $("#cams").innerHTML = CAMS.map((c) => `<button data-cam="${c}">${CAM_LABEL[c]}</button>`).join("");
   $("#cams").onclick = (e) => { const c = e.target.dataset.cam; if (c) setCamera(c); };
-  $("#styles").innerHTML = STYLES.map((s) => `<button data-style="${s}">${STYLE_LABEL[s]}</button>`).join("");
-  $("#styles").onclick = (e) => {
-    const s = e.target.dataset.style;
-    if (!s || !kit3d) return;
-    kit3d.setStyle(s);
-    pref("kit3d.style", s);
-    syncUI();
-  };
   const ant = $("#anticipation");
   ant.checked = pref("kit3d.anticipation") === "1";
   ant.onchange = () => { kit3d?.setAnticipation(ant.checked); pref("kit3d.anticipation", ant.checked ? "1" : "0"); };
@@ -320,7 +309,6 @@ function syncUI() {
   $("#rate-out").textContent = `${r}%`;
   $("#metronome").checked = engine.metronome;
   for (const b of $$("#cams [data-cam]")) b.classList.toggle("on", kit3d?.camera === b.dataset.cam);
-  for (const b of $$("#styles [data-style]")) b.classList.toggle("on", kit3d?.style === b.dataset.style);
 }
 
 // ---------- quadro ----------

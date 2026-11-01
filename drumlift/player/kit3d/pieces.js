@@ -1,7 +1,5 @@
 // Geometria das peças que não depende do visual: onde cada peça fica, onde a
 // baqueta encosta, o perfil dos pratos, o ângulo dos pedais e as estantes.
-// Os dois estilos (manequim e pelúcia) montam o kit em cima disto, então a
-// baqueta encosta no mesmo ponto nos dois.
 
 import { Object3D, Vector3 } from "../vendor/three.module.min.js";
 import {

@@ -131,7 +131,7 @@ export function prepareSong(song) {
   for (const k of LIMBS) limbs[k].sort((a, b) => a.t - b.t);
 
   const instHits = Object.fromEntries(INSTANCES.map((k) => [k, []]));
-  for (const n of notes) instHits[n.inst].push({ t: n.t, vel: n.ghost ? 0.15 : n.vel });
+  for (const n of notes) instHits[n.inst].push({ t: n.t, vel: n.ghost ? 0.15 : n.vel, limb: n.limb });
 
   // notas do pedal do chimbal (se a música tiver, como as da base MMIP)
   const pedal = (Array.isArray(song?.pedal) ? song.pedal : []).filter(Number.isFinite).sort((a, b) => a - b);

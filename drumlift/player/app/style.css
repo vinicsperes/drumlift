@@ -2,64 +2,29 @@
    O palco 3D ocupa a tela toda; por cima ficam o título, os ajustes, a
    leitura do compasso e a doca com a faixa de notas e o transporte. */
 
-@font-face {
-  font-family: "Instrument Serif";
-  src: url("../vendor/fonts/instrument-serif-latin-400-italic.woff2") format("woff2");
-  font-style: italic;
-  font-weight: 400;
-  font-display: swap;
-}
-@font-face {
-  font-family: "Instrument Serif";
-  src: url("../vendor/fonts/instrument-serif-latin-400-normal.woff2") format("woff2");
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-}
-
 :root {
-  --paper: #ece8e1;          /* mesmo fundo da cena de pelúcia */
-  --paper-hi: #f6f3ee;       /* spot atrás do baterista */
-  --ink: #2a241d;
-  --ink-2: #51483e;
-  --muted: #8a7f73;
-  --hair: rgba(42, 36, 29, 0.1);
-  --hair-2: rgba(42, 36, 29, 0.2);
-  --glass: rgba(250, 247, 242, 0.74);
-  --dock: rgba(248, 245, 240, 0.95);
-  --dock-solid: #f6f3ee;
-  --accent: #e8924a;         /* laranja do gato: loop e destaques */
-  --accent-ink: #2b1a0b;
-  --loop: rgba(232, 146, 74, 0.15);
-  --shadow: 0 1px 2px rgba(42, 36, 29, 0.05), 0 12px 32px rgba(42, 36, 29, 0.09);
-  --c-crash: #d9541e; --c-ride: #a77b00; --c-hihat: #0b84c6;
-  --c-snare: #c2185b; --c-tom: #6a3fd1; --c-kick: #2e8b45;
-  --c-md: #d32f2f; --c-me: #2952cc;
-  --serif: "Instrument Serif", "Iowan Old Style", Georgia, serif;
-  --sans: system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, sans-serif;
-  --mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, monospace;
+  --paper: #0a0a0f;
+  --paper-hi: #0a0a0f;
+  --ink: #e8e6ee;
+  --ink-2: #b4b2bf;
+  --muted: #72707e;
+  --hair: rgba(232, 230, 238, 0.08);
+  --hair-2: rgba(232, 230, 238, 0.17);
+  --glass: rgba(14, 14, 21, 0.82);
+  --dock: rgba(14, 14, 21, 0.94);
+  --dock-solid: #0e0e15;
+  --accent: #ff3d63;
+  --accent-ink: #0a0a0f;
+  --loop: rgba(255, 61, 99, 0.16);
+  --shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  --c-crash: #c9c7d1; --c-ride: #c9c7d1; --c-hihat: #c9c7d1;
+  --c-snare: #c9c7d1; --c-tom: #c9c7d1; --c-kick: #c9c7d1;
+  --c-md: #ff3d63; --c-me: #5aa9ff;
+  --mono: "JetBrainsMono Nerd Font Mono", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --serif: var(--mono);
+  --sans: var(--mono);
   --dock-h: 190px;
-  color-scheme: light;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --paper: #1b1916;
-    --paper-hi: #26221d;
-    --ink: #efe9df;
-    --ink-2: #cfc6b8;
-    --muted: #92887c;
-    --hair: rgba(239, 233, 223, 0.09);
-    --hair-2: rgba(239, 233, 223, 0.18);
-    --glass: rgba(33, 30, 26, 0.74);
-    --dock: rgba(29, 26, 23, 0.95);
-    --dock-solid: #1f1c19;
-    --loop: rgba(232, 146, 74, 0.2);
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px rgba(0, 0, 0, 0.35);
-    --c-crash: #ff8a65; --c-ride: #ffd166; --c-hihat: #4fc3f7;
-    --c-snare: #f06292; --c-tom: #b388ff; --c-kick: #7bd88f;
-    --c-md: #ff5252; --c-me: #4d7cff;
-    color-scheme: dark;
-  }
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -103,11 +68,11 @@ button, select, input { font: inherit; color: inherit; }
 .eyebrow span { font-weight: 400; }
 h1 {
   margin: 0;
-  font: italic 400 clamp(38px, 4.6vw, 66px)/0.9 var(--serif);
-  letter-spacing: -0.012em;
+  font: 600 clamp(20px, 2vw, 30px)/1.1 var(--mono);
+  letter-spacing: -0.01em;
   text-wrap: balance;
 }
-.artist { margin: 8px 0 0; font: 400 clamp(17px, 1.6vw, 22px)/1.1 var(--serif); color: var(--ink-2); }
+.artist { margin: 6px 0 0; font: 400 13px/1.2 var(--mono); color: var(--ink-2); }
 .meta { margin: 12px 0 0; font: 500 11px/1.4 var(--mono); letter-spacing: 0.04em; color: var(--muted); }
 
 /* ---------- ajustes ---------- */
@@ -121,7 +86,7 @@ h1 {
   -webkit-backdrop-filter: blur(16px) saturate(1.1);
   backdrop-filter: blur(16px) saturate(1.1);
   border: 1px solid var(--hair);
-  border-radius: 14px;
+  border-radius: 8px;
   box-shadow: var(--shadow);
 }
 .panel-head {
@@ -133,7 +98,7 @@ h1 {
   justify-content: space-between;
   padding: 12px 14px;
   cursor: pointer;
-  border-radius: 14px;
+  border-radius: 8px;
 }
 .panel-head .label { margin: 0; color: var(--ink-2); }
 .panel-head svg { width: 12px; fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-linecap: round; transition: transform 0.2s; }
@@ -224,7 +189,7 @@ details.mixer summary::-webkit-details-marker { display: none; }
   pointer-events: none;
 }
 .readout .label { margin-bottom: 7px; }
-.readout b { font: italic 400 32px/1 var(--serif); font-variant-numeric: tabular-nums; }
+.readout b { font: 600 24px/1 var(--mono); font-variant-numeric: tabular-nums; }
 .readout small { margin-left: 3px; font: 10.5px var(--mono); color: var(--muted); }
 .limbs { list-style: none; margin: 0 0 2px; padding: 0; display: grid; gap: 5px; font: 10.5px var(--mono); color: var(--muted); }
 .limbs i { display: inline-block; width: 8px; height: 8px; margin-right: 7px; border-radius: 50%; vertical-align: -0.5px; }
@@ -241,7 +206,7 @@ details.mixer summary::-webkit-details-marker { display: none; }
   -webkit-backdrop-filter: blur(16px);
   backdrop-filter: blur(16px);
   border: 1px solid var(--hair);
-  border-radius: 16px;
+  border-radius: 8px;
   box-shadow: var(--shadow);
 }
 #lane { display: block; width: 100%; height: 124px; cursor: pointer; touch-action: none; }
@@ -282,7 +247,7 @@ body.playing .play .i-pause { display: block; }
   all: unset;
   display: inline-flex; align-items: center; gap: 6px;
   padding: 7px 12px;
-  border: 1px solid var(--hair-2); border-radius: 999px;
+  border: 1px solid var(--hair-2); border-radius: 6px;
   font: 500 12px/1 var(--sans); color: var(--ink-2);
   white-space: nowrap; cursor: pointer;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
@@ -306,14 +271,14 @@ body.playing .play .i-pause { display: block; }
   -webkit-backdrop-filter: blur(20px);
   backdrop-filter: blur(20px);
   border: 1px solid var(--hair);
-  border-radius: 16px;
+  border-radius: 8px;
   box-shadow: var(--shadow);
   animation: sheet-up 0.22s ease-out;
 }
 .sheet[hidden] { display: none; }
 @keyframes sheet-up { from { transform: translateY(20px); opacity: 0; } }
 .sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px 12px; border-bottom: 1px solid var(--hair); }
-.sheet-head h2 { margin: 0; font: italic 400 28px/1 var(--serif); }
+.sheet-head h2 { margin: 0; font: 600 16px/1 var(--mono); }
 .sheet-actions { display: flex; align-items: center; gap: 8px; }
 .icon { all: unset; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; }
 .icon svg { width: 14px; stroke: var(--ink-2); stroke-width: 1.6; stroke-linecap: round; }
@@ -372,19 +337,17 @@ body.playing .play .i-pause { display: block; }
 }
 @media (max-width: 760px) {
   .masthead { top: 14px; left: 16px; max-width: calc(100vw - 150px); }
-  h1 { font-size: 30px; }
+  h1 { font-size: 18px; }
   .eyebrow { margin-bottom: 8px; }
   .eyebrow span, .meta { display: none; }
-  .artist { font-size: 16px; }
   .panel { top: 12px; right: 12px; width: auto; }
   .panel:not(.collapsed) { width: min(300px, calc(100vw - 24px)); }
-  .dock { left: 6px; right: 6px; bottom: 6px; border-radius: 14px; }
+  .dock { left: 6px; right: 6px; bottom: 6px; border-radius: 8px; }
   .transport { flex-wrap: wrap; gap: 8px 10px; }
   .break { display: block; flex-basis: 100%; height: 0; }
   #loop-label, #sheet-btn span { display: none; }
   .ab { flex: 1; width: auto; }
   .sheet { top: 8vh; left: 6px; right: 6px; bottom: 6px; }
-  .sheet-head h2 { font-size: 22px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .sheet { animation: none; }

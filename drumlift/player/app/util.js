@@ -65,7 +65,7 @@ export function makeGrid(song) {
 /** "No One Knows - QOTSA" -> { name: "No One Knows", artist: "QOTSA" }. */
 export function splitTitle(title = "") {
   const m = title.match(/^(.*?)\s+[-–—]\s+(.*)$/);
-  return m ? { name: m[1], artist: m[2] } : { name: title, artist: "" };
+  return m ? { name: m[2], artist: m[1] } : { name: title, artist: "" };
 }
 
 /** Avisinho no rodapé. */
