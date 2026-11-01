@@ -1,5 +1,5 @@
-// Geometria das peças que não depende do visual: onde cada peça fica, onde a
-// baqueta encosta, o perfil dos pratos, o ângulo dos pedais e as estantes.
+// Piece geometry: where each piece is, where the stick touches, the cymbal profile,
+// the pedal angles and the stands.
 
 import { Object3D, Vector3 } from "../vendor/three.module.min.js";
 import {
@@ -8,7 +8,7 @@ import {
 
 const UP = new Vector3(0, 1, 0);
 
-// Perfil do prato, pares (raio, altura) em metros: cúpula + arco até a borda.
+// Cymbal profile, pairs (radius, height) in meters: bell + arc to the edge.
 export function cymbalProfile(r) {
   return [[0, 0.03], [0.032, 0.028], [0.05, 0.016], [0.07, 0.007], [r, -0.012]];
 }
@@ -21,12 +21,12 @@ export function profileHeight(profile, rho) {
 }
 const PROFILES = Object.fromEntries(Object.entries(CYMBALS).map(([id, c]) => [id, cymbalProfile(c.r)]));
 
-/** "drum", "cymbal" ou "kick". */
+/** "drum", "cymbal" or "kick". */
 export const pieceKind = (id) => (id === "kick" ? "kick" : CYMBALS[id] ? "cymbal" : "drum");
 
 /**
- * Põe `obj` no "frame" da peça: origem no centro da superfície de golpe,
- * y = normal da pele, z = lado do baterista (no bumbo, y aponta pro baterista).
+ * Put `obj` in the piece's "frame": origin at the center of the strike surface,
+ * y = head normal, z = drummer's side (on the kick, y points to the drummer).
  */
 export function placeFrame(id, obj) {
   if (id === "kick") {
@@ -41,11 +41,11 @@ export function placeFrame(id, obj) {
   return obj;
 }
 
-/** Altura da superfície de golpe no frame da peça, a `rho` metros do centro. */
+/** Strike surface height in the piece's frame, `rho` meters from the center. */
 export const surfaceY = (id, rho) => (PROFILES[id] ? profileHeight(PROFILES[id], rho) : 0);
 
 const tmpFrame = new Object3D();
-/** Ponto de contato e normal da superfície (mundo) pra mão `limb` na peça `id`. */
+/** Contact point and surface normal (world) for hand `limb` on piece `id`. */
 export function contact(id, limb, outP, outN) {
   const [x, z] = CONTACTS[id][limb];
   placeFrame(id, tmpFrame);
@@ -53,21 +53,20 @@ export function contact(id, limb, outP, outN) {
   outN.copy(UP).applyQuaternion(tmpFrame.quaternion);
 }
 
-/** Ângulo entre a baqueta e a superfície no golpe. */
+/** Angle between the stick and the surface at the strike. */
 export const strikeAngle = (id) => (CYMBALS[id] ? STRIKE_ANGLE.cymbal : STRIKE_ANGLE.drum);
 
-/** Ângulo do pedal do bumbo com o pedal pisado `p` (0 = solto, 1 = batedor na pele). */
+/** Kick pedal angle with the pedal pressed `p` (0 = released, 1 = beater on the head). */
 export const pedalAngle = (p) => KICK_PEDAL.restAngle + (KICK_PEDAL.pressAngle - KICK_PEDAL.restAngle) * p;
 
-// Ângulo do batedor encostado na pele.
+// Beater angle touching the head.
 const BEATER_CONTACT = Math.asin((KICK.pos[2] + KICK_PEDAL.feltR - KICK_PEDAL.beaterPivot[2]) / KICK_PEDAL.beaterLen);
-/** Ângulo (rotation.x) do batedor com o pedal pisado `p`. */
+/** Beater angle (rotation.x) with the pedal pressed `p`. */
 export const beaterAngle = (p) => BEATER_CONTACT + (1 - p) * KICK_PEDAL.beaterBack;
 
 /**
- * Estantes e suportes: segmentos { a, b, r, frame }, com a/b no mundo ou, se
- * `frame` vier preenchido, no frame daquela peça. `foot` marca a ponta que
- * encosta no chão (pros pezinhos da estante de pano).
+ * Stands and supports: segments { a, b, r, frame }, with a/b in the world or, if
+ * `frame` is set, in that piece's frame. `foot` marks the end touching the floor.
  */
 export function standRods() {
   const out = [];
@@ -81,7 +80,7 @@ export function standRods() {
     }
   }
 
-  // tambores
+  // drums
   const sn = DRUMS.snare.pos;
   tripod(sn[0], sn[2], sn[1] - DRUMS.snare.depth - 0.01, 0.2);
   const fl = DRUMS.floor;
@@ -98,7 +97,7 @@ export function standRods() {
     rod(holderTop, [v.x, v.y, v.z], 0.009);
   }
 
-  // pratos: haste na vertical até logo abaixo da cúpula
+  // cymbals: a vertical rod up to just under the bell
   for (const id of Object.keys(CYMBALS)) {
     if (id === "hihat") rod([0, 0.03, 0], [0, 0.12, 0], 0.004, "hihat");
     placeFrame(id, f);
@@ -107,12 +106,12 @@ export function standRods() {
   }
   rod([0, -0.03, 0], [0, -0.035, 0], 0.004, "hihat");
 
-  // bumbo
+  // kick
   const [kx, ky, kz] = KICK.pos, zMid = kz - KICK.depth * 0.75;
   rod([kx - KICK.r * 0.8, ky - 0.05, zMid], [kx - KICK.r - 0.12, 0.005, zMid + 0.06], 0.008, null, true);
   rod([kx + KICK.r * 0.8, ky - 0.05, zMid], [kx + KICK.r + 0.12, 0.005, zMid + 0.06], 0.008, null, true);
 
-  // pedal do bumbo: colunas e eixo do batedor
+  // kick pedal: columns and beater axis
   const P = KICK_PEDAL;
   for (const dx of [-0.055, 0.055]) {
     rod([P.beaterPivot[0] + dx, 0.008, P.beaterPivot[2]], [P.beaterPivot[0] + dx, P.beaterPivot[1], P.beaterPivot[2]], 0.006);
@@ -120,11 +119,11 @@ export function standRods() {
   rod([P.beaterPivot[0] - 0.055, P.beaterPivot[1], P.beaterPivot[2]],
     [P.beaterPivot[0] + 0.055, P.beaterPivot[1], P.beaterPivot[2]], 0.005);
 
-  // pedal do chimbal: haste até o chimbal
+  // hi-hat pedal: rod up to the hi-hat
   const H = HIHAT_PEDAL, hh = CYMBALS.hihat.pos;
   rod([H.hinge[0], 0.008, H.hinge[2] - H.length], [hh[0], 0.03, hh[2]], 0.006);
 
-  // banco
+  // throne
   tripod(THRONE.pos[0], THRONE.pos[2], THRONE.pos[1] - 0.08, 0.22, 0.012);
   return out;
 }

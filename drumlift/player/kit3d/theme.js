@@ -1,8 +1,8 @@
-// Cores da cena.
+// Scene colors.
 
-export const LIMB_NAMES = { MD: "Mão direita", ME: "Mão esquerda", PD: "Pé direito", PE: "Pé esquerdo" };
+export const LIMB_NAMES = { MD: "Right hand", ME: "Left hand", PD: "Right foot", PE: "Left foot" };
 
-// Palco escuro do estilo mocap: as peças são todas neutras e a cor é só das mãos.
+// Dark stage: the pieces are all neutral and color belongs to the limbs.
 const NEUTRAL = "#c9c7d1";
 export const MOCAP = {
   dark: true,

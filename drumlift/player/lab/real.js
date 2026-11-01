@@ -1,6 +1,6 @@
-// O baterista real da base MMIP: carrega o FBX (corpo capturado pela roupa
-// Rokoko, com os dedos), toca a animação por tempo e amostra as juntas a
-// 120 Hz pras métricas. O FBX vem em centímetros; aqui tudo vira metro.
+// The real MMIP drummer: loads the FBX (body captured by a Rokoko suit, fingers included),
+// plays the animation by time and samples the joints at 120 Hz for the metrics. The FBX
+// is in centimeters; everything here becomes meters.
 
 import { AnimationMixer, MeshStandardMaterial, Quaternion, Vector3 } from "../vendor/three.module.min.js";
 import { FBXLoader } from "../vendor/FBXLoader.js";
@@ -17,7 +17,7 @@ export async function loadReal(url, onProgress = () => {}) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${url}: ${res.status}`);
   const buf = await res.arrayBuffer();
-  onProgress("lendo o FBX");
+  onProgress("reading the FBX");
   const obj = new FBXLoader().parse(buf, "");
   obj.scale.setScalar(0.01);
   const skin = new MeshStandardMaterial({ color: 0x9aa1ad, roughness: 0.85, metalness: 0 });
@@ -26,15 +26,15 @@ export async function loadReal(url, onProgress = () => {}) {
   const clip = obj.animations[0];
   mixer.clipAction(clip).play();
   const bones = Object.fromEntries(JOINTS.map((n) => [n, obj.getObjectByName(n)]));
-  for (const [n, b] of Object.entries(bones)) if (!b) throw new Error(`osso ${n} não encontrado no FBX`);
+  for (const [n, b] of Object.entries(bones)) if (!b) throw new Error(`bone ${n} not found in the FBX`);
 
   function setTime(t) {
     mixer.setTime(Math.min(Math.max(t, 0), clip.duration - 1e-3));
     obj.updateMatrixWorld(true);
   }
 
-  // Algumas sessões gravaram os ossos girados 180° em x (y e z do osso com o
-  // sinal trocado). Normaliza as mãos pra y = do pulso pros dedos, z = dorso.
+  // Some sessions recorded the bones turned 180° in x (bone y and z with flipped signs).
+  // Normalize the hands to y = wrist to fingers, z = back of the hand.
   const FLIP = new Quaternion(1, 0, 0, 0);
   setTime(clip.duration / 2);
   const flip = (() => {
@@ -42,7 +42,7 @@ export async function loadReal(url, onProgress = () => {}) {
     return b.sub(a).applyQuaternion(bones.Spine1.getWorldQuaternion(new Quaternion()).invert()).y < 0;
   })();
 
-  /** Posição (m) de cada junta e rotação das mãos, quadro a quadro. */
+  /** Position (m) of each joint and rotation of the hands, frame by frame. */
   function sample(fps = 120) {
     const n = Math.floor(clip.duration * fps);
     const pos = Object.fromEntries(JOINTS.map((j) => [j, new Float32Array(n * 3)]));

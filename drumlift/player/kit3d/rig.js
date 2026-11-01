@@ -1,13 +1,11 @@
-// Esqueleto do baterista, sem malha, como função pura do tempo: um "baterista"
-// decide a cada instante onde está cada baqueta, a pelve, a coluna, a cabeça,
-// os cotovelos e os pés (o comando, skeleton.js), e o esqueleto humano
-// resolve o resto. Os estilos só vestem este esqueleto, então o golpe é o
-// mesmo em qualquer visual.
+// The drummer's skeleton, with no mesh, as a pure function of time: a "drummer" decides
+// at each moment where each stick, the pelvis, spine, head, elbows and feet are
+// (the drive, skeleton.js), and the human skeleton solves the rest. The stage only
+// draws this skeleton.
 //
-// Pra cada mão e cada peça há uma "configuração de golpe" (fulcro, direção e
-// giro da baqueta, abertura do cotovelo) em que a ponta encosta exatamente no
-// ponto de contato da peça; a animação interpola entre essas configurações e
-// levanta a baqueta no meio.
+// For each hand and each piece there is a "strike configuration" (stick fulcrum, direction
+// and roll, elbow opening) where the tip touches exactly the piece's contact point. The
+// animation interpolates between these configurations and lifts the stick in between.
 
 import { Matrix4, Object3D, Quaternion, Vector3 } from "../vendor/three.module.min.js";
 import { BODY, CYMBALS, DRUMS, HIHAT_PEDAL, KICK_PEDAL, TORSO_LIMIT, TORSO_REACH } from "./layout.js";
@@ -18,41 +16,41 @@ import { segmentAt } from "./perform.js";
 import { unwarp } from "./moves.js";
 
 export { FEET, HANDS };
-export const TIP_R = 0.0085; // raio da bolinha na ponta da baqueta
+export const TIP_R = 0.0085; // radius of the ball at the stick's tip
 
 const UP = new Vector3(0, 1, 0);
 const X_AXIS = new Vector3(1, 0, 0);
 const deg = (d) => (d * Math.PI) / 180;
-// Chicote (método Moeller): o cotovelo e o ombro sobem um instante antes da
-// baqueta. Só mexe na cadeia do braço, não no pulso: a ponta continua exata.
-const WHIP_LEAD = 0.04;    // s de adiantamento do cotovelo
-const WHIP_SWIVEL = 0.22;  // rad que o cotovelo abre com a baqueta toda levantada
-const WHIP_CLAV = 0.03;    // rad que a clavícula sobe
-// Trocando de peça, a mão passa por cima dos aros: levanta mais quanto mais longe.
-const TRAVEL_ARC = 0.55;   // altura extra (fração de h) por metro de distância
-// Subida da ponta da baqueta com h = 1, e quanto dela vem da mão (o resto é o
-// giro do pulso). Medido num baterista real: nos pratos quase tudo é pulso e
-// dedos; na caixa e nos tons a mão desce junto, ~40% da subida.
+// Whip (Moeller method): the elbow and shoulder rise just before the stick. It only
+// moves the arm chain, not the wrist, so the tip stays exact.
+const WHIP_LEAD = 0.04;    // s of elbow lead
+const WHIP_SWIVEL = 0.22;  // rad the elbow opens with the stick fully up
+const WHIP_CLAV = 0.03;    // rad the clavicle rises
+// Changing pieces, the hand clears the rims: the farther, the higher.
+const TRAVEL_ARC = 0.55;   // extra height (fraction of h) per meter of distance
+// Tip rise at h = 1, and how much of it comes from the hand (the rest is wrist turn).
+// Measured on a real drummer: on cymbals it is nearly all wrist and fingers; on the
+// snare and toms the hand comes along, ~40% of the rise.
 const TIP_MAX = 0.36;
 const HAND_SHARE = { hihat: 0.05, ride: 0.05, crash: 0.25, snare: 0.4, tom1: 0.4, tom2: 0.4, floor: 0.4 };
-const REACH_K = 0.6;       // quanto o tronco gira/inclina na direção das peças longe
-// O corpo "quica" no pulso: o tronco desce e inclina um pouco logo depois de
-// cada batida (no baterista real, a cabeça fica mais baixa a ~0,28 do tempo).
+const REACH_K = 0.6;       // how much the torso turns and leans toward far pieces
+// The body bounces on the pulse: the torso drops and leans a little right after each
+// beat (on the real drummer, the head is lowest at ~0.28 of the beat).
 const BOUNCE = 0.007;      // m
 const BOUNCE_PHASE = 0.28;
-// Pé esquerdo: o calcanhar marca o pulso com a ponta parada no pedal do chimbal.
-const HEEL_LIFT = 0.16;    // rad no meio do tempo
-// Bumbo de calcanhar levantado: o calcanhar fica no ar e sobe mais com o pedal solto.
+// Left foot: the heel marks the pulse with the toes still on the hi-hat pedal.
+const HEEL_LIFT = 0.16;    // rad at mid beat
+// Heel-up kick: the heel stays in the air and rises more with the pedal released.
 const HEEL_UP = 0.3;       // rad
-const HEEL_STOMP = 0.22;   // rad a mais com o pedal solto (a perna "carrega" o golpe)
-const HEEL_WIN = 1.5;      // s: janela da força média dos bumbos
-// Como o tronco se divide pelas vértebras (pelve, lombar, torácica, peito).
+const HEEL_STOMP = 0.22;   // extra rad with the pedal released (the leg "loads" the stroke)
+const HEEL_WIN = 1.5;      // s: window for the mean kick strength
+// How the torso splits across the vertebrae (pelvis, lumbar, thoracic, chest).
 const YAW_SPLIT = [0.15, 0.25, 0.3, 0.3];
 const LEAN_SPLIT = [0.25, 0.3, 0.3, 0.15];
-const HEAD_DOWN = deg(-12); // a cabeça olha pra caixa
-// Pose de golpe medida no baterista real (tools/mmip_moves.py): giro da mão em
-// volta da baqueta (0 = dorso pra cima, pegada alemã; + = polegar pra cima) e
-// abertura do cotovelo (+ = pra fora), em graus.
+const HEAD_DOWN = deg(-12); // the head looks at the snare
+// Strike pose measured on the real drummer (tools/mmip_moves.py): hand turn around the
+// stick (0 = back of the hand up, German grip; + = thumb up) and elbow opening
+// (+ = outward), in degrees.
 const ROLL = {
   MD: { snare: 43, hihat: 41, tom1: 46, tom2: 57, floor: 62, crash: 40, ride: 64 },
   ME: { snare: 24, hihat: 33, tom1: 31, tom2: 10, floor: 19, crash: 25, ride: 33 },
@@ -63,7 +61,7 @@ const SWIVEL = {
 };
 const HAND_TARGETS = ["snare", "hihat", "tom1", "tom2", "floor", "crash", "ride"];
 
-/** Orientação da baqueta com direção d e giro `roll` (rad) em volta dela. */
+/** Stick orientation with direction d and roll `roll` (rad) around it. */
 export function stickQuat(d, roll, out = new Quaternion()) {
   const y = d.clone().normalize();
   const ups = UP.clone().addScaledVector(y, -y.y).normalize();
@@ -78,9 +76,9 @@ export function createRig() {
   const drive = createDrive();
   const pelvis = new Vector3(...SKEL.hips);
 
-  // ---------- configurações de golpe ----------
-  // Fulcro F0 e orientação q0 tais que F0 + d0 * stickFront = centro da
-  // bolinha encostada na superfície (P + n * TIP_R).
+  // ---------- strike configurations ----------
+  // Fulcrum F0 and orientation q0 such that F0 + d0 * stickFront = center of the
+  // ball touching the surface (P + n * TIP_R).
   const configs = { MD: {}, ME: {} };
   {
     const P = new Vector3(), n = new Vector3(), hd = new Vector3();
@@ -94,52 +92,52 @@ export function createRig() {
         const d0 = along.multiplyScalar(Math.cos(beta)).addScaledVector(n, -Math.sin(beta)).normalize();
         const tip = P.clone().addScaledVector(n, TIP_R);
         const F0 = tip.clone().addScaledVector(d0, -SKEL.stickFront);
-        // polegar pra cima gira o dorso pra fora: pra direita na mão direita, pra esquerda na esquerda
+        // thumb up turns the back of the hand outward: right on the right hand, left on the left
         const q0 = stickQuat(d0, deg(ROLL[limb][id]) * (limb === "MD" ? 1 : -1));
-        // mão nessa pose (a baqueta vem da mão pela pegada fixa)
+        // hand in this pose (the stick comes from the hand through the fixed grip)
         const g = skel.grip[limb];
         const hq0 = q0.clone().multiply(g.q.clone().invert());
         const hp0 = F0.clone().sub(g.f.clone().applyQuaternion(hq0));
-        // H0 (antigo nome do fulcro) fica por compatibilidade
+        // H0 (the fulcrum's old name) stays for compatibility
         configs[limb][id] = { P: P.clone(), n: n.clone(), tip, d0, F0, H0: F0, q0, hq0, hp0, swivel: deg(SWIVEL[limb][id]) };
       }
     }
   }
 
-  // Compatibilidade: juntas principais com os nomes de antes.
+  // Compatibility: main joints under their old names.
   const arms = {}, legs = {};
   for (const limb of HANDS) {
     arms[limb] = {
       state: { a: "snare", b: "snare", w: 1, h: 0 },
       shoulder: new Vector3(), elbow: new Vector3(), wrist: new Vector3(), fulcrum: new Vector3(),
-      dir: new Vector3(0, 1, 0), // direção da baqueta (do fulcro pra ponta)
+      dir: new Vector3(0, 1, 0), // stick direction (fulcrum to tip)
       reached: true,
     };
   }
   for (const [limb, pedal] of [["PD", KICK_PEDAL], ["PE", HIHAT_PEDAL]]) {
-    const foot = new Object3D(); // prancha do pedal; rotation.x = ângulo
+    const foot = new Object3D(); // pedal board; rotation.x = angle
     foot.position.set(...pedal.hinge);
     legs[limb] = { foot, rest: foot.position.clone(), hip: new Vector3(), knee: new Vector3(), ankle: new Vector3(), reached: true };
   }
-  // Tronco (compatibilidade): origem na pelve, rotação do peito.
+  // Torso (compatibility): origin at the pelvis, rotation of the chest.
   const torso = new Object3D();
   torso.position.copy(pelvis);
   torso.rotation.order = "YXZ";
 
-  // ---------- performance assada (perform.js) ----------
-  // Com plano, cada golpe coberto usa o recorte de um baterista real: a mão sai
-  // do caminho reto entre as duas poses de golpe pelo resíduo gravado (no frame
-  // de rumo dela), gira pelo giro gravado e o cotovelo abre como o dele. Nas
-  // pontas o resíduo é zero: a baqueta encosta exatamente na nota.
+  // ---------- baked performance (perform.js) ----------
+  // With a plan, each covered stroke uses a real drummer's segment: the hand leaves the
+  // straight path between the two strike poses by the recorded residual (in its heading
+  // frame), turns by the recorded turn and the elbow opens like his. At the ends the
+  // residual is zero, so the stick touches exactly on the note.
   let plan = null;
   const res = new Float32Array(8);
   const baseP = new Vector3(), baseQ = new Quaternion(), handP = new Vector3(), handQ = new Quaternion();
   const fwd = new Vector3(), back = new Vector3(), right = new Vector3(), rv = new Vector3(), dq = new Quaternion();
   const tipV = new Vector3();
-  const SHALLOW = 0.05; // m: até onde a trava das peças do caminho age
+  const SHALLOW = 0.05; // m: how deep the clamp for pieces along the path acts
   const SWIVEL_RES = 0.5;
   const minjerk = (u) => u * u * u * (10 - 15 * u + 6 * u * u);
-  // frame de cada peça (origem no centro da superfície de golpe, y = normal)
+  // frame of each piece (origin at the center of the strike surface, y = normal)
   const pieceFrames = {};
   {
     const o = new Object3D();
@@ -150,9 +148,9 @@ export function createRig() {
     }
   }
   /**
-   * Empurra a baqueta pra fora da peça se a ponta estiver dentro dela (some
-   * suave na borda). Com `depth`, só se ela entrou até essa profundidade (abaixo
-   * disso, a ponta está do lado ou embaixo da peça, não passando por cima).
+   * Push the stick out of the piece if the tip is inside it (fading at the edge).
+   * With `depth`, only if it went that deep (below that, the tip is beside or under
+   * the piece, not passing over it).
    */
   function guard(st, id, depth = Infinity) {
     const f = pieceFrames[id];
@@ -164,7 +162,7 @@ export function createRig() {
     const k = rho < f.r - 0.02 ? 1 : 1 - (rho - (f.r - 0.02)) / 0.05;
     st.pos.addScaledVector(f.n, deficit * k * k * (3 - 2 * k));
   }
-  /** Catmull-Rom nas amostras do recorte i, na posição s (0..N-1). */
+  /** Catmull-Rom over the samples of segment i, at position s (0..N-1). */
   function sample(p, i, s) {
     const N = plan.N, C = plan.C, base = i * N * C, k = Math.min(N - 2, Math.floor(s)), f = s - k;
     const i0 = Math.max(0, k - 1), i3 = Math.min(N - 1, k + 2);
@@ -174,11 +172,11 @@ export function createRig() {
       res[c] = 0.5 * (2 * p1 + (p2 - p0) * f + (2 * p0 - 5 * p1 + 4 * p2 - p3) * f2 + (3 * p1 - p0 - 3 * p2 + p3) * f3);
     }
   }
-  /** Mão (handP, handQ) entre duas poses de golpe, no ponto sig do caminho, com o resíduo r. */
+  /** Hand (handP, handQ) between two strike poses, at point sig of the path, with residual r. */
   function handFromResidual(ca, cb, sig, r) {
     baseP.lerpVectors(ca.hp0, cb.hp0, sig);
     baseQ.slerpQuaternions(ca.hq0, cb.hq0, sig);
-    // frame de rumo: y pra cima, z pra trás do rumo da mão
+    // heading frame: y up, z behind the hand's heading
     fwd.set(0, 1, 0).applyQuaternion(baseQ).setY(0);
     if (fwd.lengthSq() < 1e-8) fwd.set(0, 0, -1);
     fwd.normalize();
@@ -192,10 +190,10 @@ export function createRig() {
   }
 
   /**
-   * Quanto um recorte, posto no nosso kit entre as peças a e b, chega perto de
-   * atravessar alguma peça (m; negativo = entra), a altura mais baixa da ponta e
-   * quanto ela mergulha abaixo das duas peças do golpe.
-   * O plano usa isso pra descartar recortes que não cabem no nosso kit.
+   * How close a segment, placed on our kit between pieces a and b, comes to crossing
+   * any piece (m; negative = enters), the tip's lowest height, and how far it dives
+   * below the stroke's two pieces.
+   * The plan uses this to discard segments that don't fit our kit.
    */
   const curveR = new Float32Array(8), ctip = new Vector3();
   function curveClearance(limb, a, b, curve, off, N, C, w) {
@@ -208,18 +206,18 @@ export function createRig() {
       ctip.set(0, SKEL.stickFront, 0).applyQuaternion(g.q).add(g.f).applyQuaternion(handQ).add(handP);
       low = Math.min(low, ctip.y);
       for (const id of HAND_TARGETS) {
-        if (id === a || id === b) continue; // essas a trava resolve na hora
+        if (id === a || id === b) continue; // the clamp handles these on the spot
         const f = pieceFrames[id];
         tipV.copy(ctip).applyMatrix4(f.inv);
         const rho = Math.hypot(tipV.x, tipV.z);
         if (rho > f.r) continue;
         const top = surfaceY(id, rho) + TIP_R;
-        // tambor: o corpo todo; prato: uma camada fina
+        // drum: the whole body; cymbal: a thin layer
         const bottom = f.depth ? -f.depth : top - 0.025;
         if (tipV.y > bottom) clear = Math.min(clear, tipV.y - top);
       }
     }
-    // mergulho: quanto a ponta desce abaixo da mais baixa das duas peças
+    // dive: how far the tip drops below the lower of the two pieces
     return { clear, low, dip: Math.min(ca.tip.y, cb.tip.y) - low };
   }
 
@@ -232,23 +230,23 @@ export function createRig() {
     handFromResidual(ca, cb, sig, res);
     st.quat.copy(handQ).multiply(g.q);
     st.pos.copy(g.f).applyQuaternion(handQ).add(handP);
-    // a baqueta nunca entra na peça que acabou de tocar nem na que vai tocar, e
-    // passa por cima das outras (no caminho entre duas peças, por cima do aro)
+    // the stick never enters the piece it just played or will play, and passes over the
+    // others (on the way between two pieces, over the rim)
     for (const id of HAND_TARGETS) {
       if (id === p.a[i] || id === p.b[i]) guard(st, id);
       else guard(st, id, SHALLOW);
     }
-    // o cotovelo do nosso braço (proporções de boneco) já se mexe mais com a mão: metade do giro gravado
+    // our arm's elbow (doll proportions) already moves more with the hand: half the recorded turn
     drive.swivel[limb] = ca.swivel + (cb.swivel - ca.swivel) * sig + SWIVEL_RES * res[6];
     drive.clav[limb].elev = 0;
     drive.clav[limb].prot = 0;
-    // os dedos apertam no golpe e soltam no meio
+    // the fingers squeeze at the strike and release in between
     const edge = Math.min(u, 1 - u) * (t1 - t0);
     drive.grip[limb] = Math.max(0, 1 - edge / 0.08);
     arms[limb].dir.set(0, 1, 0).applyQuaternion(st.quat);
   }
 
-  // Centro da cabeça na postura de base (de onde o olhar mira os alvos).
+  // Center of the head in the base posture (where the gaze aims from).
   const headRest = new Vector3(...SKEL.hips)
     .add(new Vector3(0, SKEL.spine[1] + SKEL.spine1[1] + SKEL.chest[1] + SKEL.neck[1] + SKEL.head[1] + 0.09, 0)
       .applyAxisAngle(X_AXIS, -BODY.leanBase * 0.6));
@@ -259,7 +257,7 @@ export function createRig() {
   const lead = { a: "snare", b: "snare", w: 1, h: 0, travel: 0 };
   const reach = (limb, id) => TORSO_REACH[limb][id] || TORSO_REACH[limb].snare;
 
-  /** Quanto a música está "rolando" agora (0..1): golpe nos últimos/próximos tempos. */
+  /** How much the music is "rolling" now (0..1): a stroke in the last or next beats. */
   function activity(prep, t) {
     const len = prep.clock.beatLen(t);
     let active = 0;
@@ -275,7 +273,7 @@ export function createRig() {
     return active;
   }
 
-  /** Mãos no tempo t: baquetas, cotovelos e dedos (não dependem do corpo). */
+  /** Hands at time t: sticks, elbows and fingers (independent of the body). */
   function performHands(t, prep) {
     const limbs = prep.limbs;
     handState(limbs.MD, BODY.home.MD, t, arms.MD.state);
@@ -284,15 +282,15 @@ export function createRig() {
       const arm = arms[limb], s = arm.state, st = drive.stick[limb];
       const ca = configs[limb][s.a] || configs[limb][BODY.home[limb]];
       const cb = configs[limb][s.b] || configs[limb][BODY.home[limb]];
-      // pose base entre duas configurações de golpe
+      // base pose between two strike configurations
       st.pos.lerpVectors(ca.F0, cb.F0, s.w);
       st.quat.slerpQuaternions(ca.q0, cb.q0, s.w);
       const d = arm.dir.set(0, 1, 0).applyQuaternion(st.quat);
-      // levantar: o fulcro sobe e recua, a baqueta gira pra cima em volta dele;
-      // trocando de peça, levanta mais no meio do caminho (por cima dos aros)
+      // lifting: the fulcrum rises and pulls back, the stick turns up around it;
+      // changing pieces, it lifts more mid-way (over the rims)
       const h = s.h + TRAVEL_ARC * s.travel * ca.F0.distanceTo(cb.F0);
       if (h > 0) {
-        // a ponta sobe h·TIP_MAX; parte disso é a mão subindo, o resto é o pulso girando
+        // the tip rises h*TIP_MAX; part is the hand rising, the rest the wrist turning
         const sa = HAND_SHARE[s.a] ?? 0.3, share = sa + ((HAND_SHARE[s.b] ?? 0.3) - sa) * s.w;
         const rise = h * TIP_MAX, handRise = share * rise;
         tmpV.set(d.x, 0, d.z).normalize();
@@ -303,7 +301,7 @@ export function createRig() {
         qLift.setFromAxisAngle(tmpK, Math.asin(want) - phi);
         st.quat.premultiply(qLift);
       }
-      // chicote: o braço "puxa" a baqueta, adiantado no tempo
+      // whip: the arm "pulls" the stick, ahead in time
       handState(limbs[limb], BODY.home[limb], t + WHIP_LEAD, lead);
       const hLead = Math.min(1.2, lead.h + TRAVEL_ARC * lead.travel * 0.3);
       drive.swivel[limb] = ca.swivel + (cb.swivel - ca.swivel) * s.w + WHIP_SWIVEL * hLead;
@@ -319,13 +317,13 @@ export function createRig() {
   }
 
   /**
-   * Corpo no tempo t: pelve, coluna, cabeça, clavículas e pés. Com o corpo
-   * assado (plan.body), os desvios vêm do baterista real (alcance, groove e
-   * olhar); sem ele, o tronco gira e balança pelas regras de antes.
+   * Body at time t: pelvis, spine, head, clavicles and feet. With the baked body
+   * (plan.body), the deviations come from the real drummer (reach, groove and gaze);
+   * without it, the torso turns and sways by the older rules.
    */
   function performBody(t, prep, press) {
     const body = plan?.body;
-    // tronco: gira e inclina na direção das peças longe; balança de leve no tempo
+    // torso: turns and leans toward far pieces; sways gently in time
     let yaw = 0, lean = 0;
     for (const limb of HANDS) {
       const s = arms[limb].state, ra = reach(limb, s.a), rb = reach(limb, s.b);
@@ -339,32 +337,32 @@ export function createRig() {
     const pulse = active * (0.5 + 0.5 * Math.cos(2 * Math.PI * (phase - BOUNCE_PHASE)));
     const pitch = BODY.leanBase + lean + TORSO_LIMIT.bob * pulse;
     if (body) {
-      // parado, o corpo sossega (menos groove) e, com as baquetas nas coxas, recosta um pouco
+      // when still, the body settles (less groove) and, with the sticks on the thighs, leans back a little
       const rested = 0.5 * (lapW.MD + lapW.ME);
       applyBody(body, t, BODY.leanBase * (1 - 0.6 * rested) + 0.5 * lean + BODY_BOUNCE * TORSO_LIMIT.bob * pulse, 0.35 + 0.65 * active);
-      // metade do giro das regras de antes por cima: o nosso kit é mais aberto
-      // que o da captura, e sem isso a mão direita não chega no prato de ataque
+      // half of the older rules' turn on top: our kit is more open than the capture's,
+      // and without this the right hand doesn't reach the crash
       for (let k = 0; k < 4; k++) (k ? drive.spine[k - 1] : drive.hips.rot).y += 0.5 * yaw * YAW_SPLIT[k];
       drive.hips.pos.y -= BODY_BOUNCE * BOUNCE * pulse;
     } else {
       drive.hips.pos.set(pelvis.x, pelvis.y - BOUNCE * pulse, pelvis.z);
       drive.hips.rot.set(-pitch * LEAN_SPLIT[0], yaw * YAW_SPLIT[0], 0);
       for (let k = 0; k < 3; k++) drive.spine[k].set(-pitch * LEAN_SPLIT[k + 1], yaw * YAW_SPLIT[k + 1], 0);
-      // cabeça: compensa metade do giro e da inclinação, olhando pro kit
+      // head: compensates half the turn and lean, looking at the kit
       drive.neck.set(pitch * 0.35, -yaw * 0.25, 0);
       drive.head.set(HEAD_DOWN + pitch * 0.25, -yaw * 0.2, 0);
     }
 
-    // pé direito: nas partes fortes toca de calcanhar levantado (a perna toda
-    // sobe e cai no pedal, a planta do pé fica na prancha); nas leves e paradas,
-    // de calcanhar no pedal, só o tornozelo
+    // right foot: in loud parts it plays heel up (the whole leg rises and falls on the
+    // pedal, the ball of the foot stays on the board); in soft and still parts, heel
+    // down, ankle only
     const up = heelUp(prep, t);
     legs.PD.foot.rotation.x = pedalAngle(press);
     legs.PD.foot.updateMatrix();
     drive.foot.PD.board.copy(legs.PD.foot.matrix);
     drive.foot.PD.heel = 0;
     drive.foot.PD.lift = up * (HEEL_UP + HEEL_STOMP * (1 - press));
-    // pé esquerdo: segura o chimbal fechado (calcanhar marcando o tempo) ou faz o "chick"
+    // left foot: holds the hi-hat closed (heel marking time) or does the "chick"
     hihatFoot(prep, t, hh);
     legs.PE.foot.rotation.x = HIHAT_PEDAL.angle - HIHAT_PEDAL.travel * hh.press;
     legs.PE.foot.updateMatrix();
@@ -373,7 +371,7 @@ export function createRig() {
     drive.foot.PE.lift = HEEL_LIFT * hh.tap;
   }
 
-  /** Quanto o bumbo está sendo tocado de calcanhar levantado (0..1): força média dos bumbos em volta. */
+  /** How heel-up the kick is played (0..1): the mean kick strength around t. */
   function heelUp(prep, t) {
     const hits = prep.limbs.PD;
     if (!hits.length) return 0;
@@ -391,11 +389,11 @@ export function createRig() {
   }
   const hh = { press: 0, tap: 0 };
 
-  /** Desvios assados do corpo (8 juntas x 3 e a posição da pelve, frame do baterista) sobre a postura base. */
+  /** Baked body deviations (8 joints x 3 and the pelvis position, drummer's frame) over the base posture. */
   const bodyD = new Float32Array(32);
-  // Ganho dos desvios assados (o groove sai amostrado a 4 por tempo e perde um
-  // pouco do tremor; a pelve vem um pouco menos que na roupa de sensores) e o
-  // quique no pulso, que nos trechos reais aparece fraco.
+  // Gain of the baked deviations (the groove is sampled at 4 per beat and loses some
+  // tremor; the pelvis comes in a bit under the sensor suit) and the bounce on the
+  // pulse, which is weak in the real clips.
   const BODY_GAIN = 1.35, PELVIS_SWAY = 0.8, BODY_BOUNCE = 0.35;
   function applyBody(body, t, pitch, gain = 1) {
     const C = body.channels, n = body.delta.length / C, f = Math.max(0, t * body.fps);
@@ -408,7 +406,7 @@ export function createRig() {
     for (let k = 0; k < 3; k++) drive.spine[k].set(-pitch * LEAN_SPLIT[k + 1] + d[3 + k * 3], d[4 + k * 3], d[5 + k * 3]);
     drive.neck.set(pitch * 0.35 + d[12], d[13], d[14]);
     drive.head.set(HEAD_DOWN + pitch * 0.25 + d[15], d[16], d[17]);
-    // clavículas: sobe = giro em volta do eixo pra trás, vai pra frente = em volta do vertical
+    // clavicles: rise = turn around the back axis, forward = around the vertical
     drive.clav.MD.elev += d[20];
     drive.clav.MD.prot += d[19];
     drive.clav.ME.elev -= d[23];
@@ -416,9 +414,9 @@ export function createRig() {
   }
 
   /**
-   * Mão sem golpe por perto: parada no ar ela respira (deriva lenta de poucos
-   * centímetros); numa pausa longa as baquetas descansam nas coxas e voltam
-   * antes da entrada. Perto das notas não mexe em nada (o golpe continua exato).
+   * A hand with no stroke nearby: held in the air it breathes (a slow drift of a few
+   * centimeters); in a long break the sticks rest on the thighs and return before the
+   * entry. Near notes it changes nothing, so the stroke stays exact.
    */
   const lapQ = {}, lapP = {};
   for (const limb of HANDS) {
@@ -435,7 +433,7 @@ export function createRig() {
     while (lo < hi) { const m = (lo + hi) >> 1; if (hits[m].t <= t) lo = m + 1; else hi = m; }
     const since = lo > 0 ? t - hits[lo - 1].t : Infinity, until = lo < hits.length ? hits[lo].t - t : Infinity;
     const sm = (a, b, x) => { const u = Math.min(1, Math.max(0, (x - a) / (b - a))); return u * u * (3 - 2 * u); };
-    // respiração: some perto das notas
+    // breathing: fades near the notes
     const idle = sm(0.45, 1.1, since) * sm(0.55, 1.1, until);
     if (idle > 0) {
       const ph = limb === "MD" ? 0 : 1.7;
@@ -443,13 +441,13 @@ export function createRig() {
         0.007 * Math.sin(2 * Math.PI * t / 5.3 + ph * 1.3));
       st.pos.addScaledVector(restV, idle);
     }
-    // pausa longa: baquetas nas coxas
+    // long break: sticks on the thighs
     const lap = sm(0.7, 1.8, since) * sm(1.2, 2.2, until);
     lapW[limb] = lap;
     if (lap > 0) {
       st.pos.lerp(lapP[limb], lap);
       st.quat.slerp(lapQ[limb], lap);
-      // no caminho, a mão sobe um pouco pra baqueta passar por cima da caixa
+      // on the way, the hand rises a little so the stick clears the snare
       st.pos.y += 0.07 * 4 * lap * (1 - lap);
       drive.swivel[limb] += (0.18 - drive.swivel[limb]) * lap;
       drive.grip[limb] *= 1 - lap;
@@ -457,13 +455,13 @@ export function createRig() {
     }
   }
 
-  /** Decide o comando de pose no tempo t. */
+  /** Decide the pose drive at time t. */
   function perform(t, prep, press) {
     performHands(t, prep);
     performBody(t, prep, press);
   }
 
-  /** Pulsos no tempo t (só as mãos; pra assar o corpo). */
+  /** Wrists at time t (hands only, to bake the body). */
   const wq = new Quaternion(), wv = new Vector3();
   function wrists(t, prep, outR, outL) {
     performHands(t, prep);
@@ -499,14 +497,14 @@ export function createRig() {
     torso.updateMatrixWorld(true);
   }
 
-  /** Calcula o esqueleto inteiro no tempo t. `press` = pedal do bumbo (0..1). */
+  /** Compute the whole skeleton at time t. `press` = kick pedal (0..1). */
   function update(t, prep, press) {
     perform(t, prep, press);
     skel.solve(drive);
     sync();
   }
 
-  /** Centro da bolinha da baqueta no mundo (depois do update). */
+  /** Center of the stick's ball in the world (after update). */
   function tip(limb, out = new Vector3()) {
     const st = drive.stick[limb];
     return out.set(0, SKEL.stickFront, 0).applyQuaternion(st.quat).add(st.pos);
@@ -514,7 +512,7 @@ export function createRig() {
 
   return {
     skel, drive, torso, arms, legs, configs, update, tip, TIP_R, X_AXIS,
-    /** Performance assada (perform.js) ou null pro modelo procedural. */
+    /** Baked performance (perform.js), or null for the procedural model. */
     setPlan(p) { plan = p; },
     wrists, headRest, curveClearance,
     get plan() { return plan; },

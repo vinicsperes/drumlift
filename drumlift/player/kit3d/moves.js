@@ -1,12 +1,11 @@
-// Biblioteca de golpes de um baterista de verdade (base MMIP, CC BY-NC-SA 4.0,
-// gerada por tools/mmip_moves.py). Cada recorte é o movimento de uma mão entre
-// duas notas seguidas, descrito em relação ao caminho reto entre as duas poses
-// de golpe: quanto o pulso sai desse caminho (no frame de rumo da mão), quanto
-// a mão gira (no espaço dela) e quanto o cotovelo abre. Na ponta de cada
-// recorte o resíduo é zero, então ele cola em qualquer par de poses de golpe,
-// as nossas inclusive. Os recortes vêm comprimidos por PCA, por mão.
+// Library of a real drummer's strokes (MMIP database, CC BY-NC-SA 4.0, built by
+// tools/mmip_moves.py). Each segment is one hand's motion between two consecutive notes,
+// described against the straight path between the two strike poses: how far the wrist
+// leaves that path (in the hand's heading frame), how much the hand turns (in its own
+// space) and how far the elbow opens. The residual is zero at each end, so it fits any
+// pair of strike poses, ours included. Segments are compressed with PCA, per hand.
 //
-// Sem DOM: roda no Worker que monta a performance.
+// No DOM: runs in the Worker that builds the performance.
 
 const decode = (b64, Type) => {
   const bin = atob(b64), bytes = new Uint8Array(bin.length);
@@ -16,7 +15,7 @@ const decode = (b64, Type) => {
 
 let cache = null;
 
-/** Carrega e decodifica a biblioteca (uma vez por página ou Worker). */
+/** Load and decode the library (once per page or Worker). */
 export function loadMoves(url) {
   if (!cache) {
     cache = fetch(url).then((r) => {
@@ -27,7 +26,7 @@ export function loadMoves(url) {
   return cache;
 }
 
-/** Biblioteca a partir do JSON já lido. */
+/** Library from the already read JSON. */
 export function parseMoves(json) {
   const N = json.samples, C = json.channels.length;
   const hands = {};
@@ -38,7 +37,7 @@ export function parseMoves(json) {
     for (let i = 0; i < raw.length; i++) coef[i] = raw[i] * d.coefScale[i % K];
     const f = Object.fromEntries(Object.entries(d.feat).map(([k, v]) => [k, decode(v, k === "a" || k === "b" || k === "va" || k === "vb" ? Uint8Array : Uint16Array)]));
     const n = d.n;
-    // por par de peças (a -> b): índices dos recortes, pra busca rápida
+    // per piece pair (a -> b): segment indices, for quick search
     const byPair = new Map();
     for (let i = 0; i < n; i++) {
       const key = f.a[i] * 16 + f.b[i];
@@ -64,7 +63,7 @@ export function parseMoves(json) {
   return { N, C, warp: json.warp, insts: json.insts, gap: json.gap, hands, body, credit: json.credit };
 }
 
-/** Curva de resíduo (N x C, Float32Array) do recorte i da mão h. */
+/** Residual curve (N x C, Float32Array) of segment i of hand h. */
 export function curveOf(lib, h, i, out = new Float32Array(lib.N * lib.C)) {
   const H = lib.hands[h], K = H.K, D = lib.N * lib.C;
   for (let j = 0; j < D; j++) {
@@ -72,7 +71,7 @@ export function curveOf(lib, h, i, out = new Float32Array(lib.N * lib.C)) {
     for (let k = 0; k < K; k++) v += H.coef[i * K + k] * H.basis[k * D + j];
     out[j] = v * H.scale[j % lib.C];
   }
-  // as pontas são as poses de golpe: resíduo zero, mesmo depois da compressão
+  // the ends are the strike poses: zero residual, even after compression
   const C = lib.C;
   for (let c = 0; c < C; c++) {
     const v0 = out[c], v1 = out[(lib.N - 1) * C + c];
@@ -88,9 +87,9 @@ const DRUMS = new Set(["snare", "tom1", "tom2", "floor"]);
 const group = (inst) => (DRUMS.has(inst) ? 0 : 1);
 
 /**
- * Melhores recortes pra um golpe nosso: mesma mão, mesmo par de peças (ou do
- * mesmo tipo), intervalo parecido, força parecida. Devolve índices em ordem.
- * q = { a, b (nomes das peças), g, va, vb, gp, gn, beat (s) }
+ * Best segments for one of our strokes: same hand, same piece pair (or same type),
+ * similar interval, similar strength. Returns indices in order.
+ * q = { a, b (piece names), g, va, vb, gp, gn, beat (s) }
  */
 export function matchMoves(lib, h, q, k = 6) {
   const H = lib.hands[h];
@@ -98,7 +97,7 @@ export function matchMoves(lib, h, q, k = 6) {
   const same = q.a === q.b;
   let cands = H.byPair.get(ia * 16 + ib) || [];
   if (cands.length < 8) {
-    // sem o par exato: outro par do mesmo tipo (mesma peça x troca; tambor x prato)
+    // no exact pair: another pair of the same type (same piece x change; drum x cymbal)
     cands = cands.slice();
     for (const [key, list] of H.byPair) {
       const a = lib.insts[key >> 4], b = lib.insts[key & 15];
@@ -126,7 +125,7 @@ export function matchMoves(lib, h, q, k = 6) {
   return best;
 }
 
-/** Tempo normalizado u (0..1) -> posição s (0..1) nas amostras (inverso do warp). */
+/** Normalized time u (0..1) -> position s (0..1) in the samples (inverse of the warp). */
 export function unwarp(u, w) {
   let s = u;
   for (let k = 0; k < 5; k++) {

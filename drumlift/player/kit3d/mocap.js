@@ -1,8 +1,7 @@
-// Estilo "mocap": o baterista como numa captura de movimento (juntas e ossos),
-// num palco escuro, com o kit em traço fino. As faces das peças têm a cor do
-// fundo, só pra esconder o que está atrás, como num desenho técnico. A cor
-// aparece só em quem está tocando: cada mão tem a sua, e a peça acende na cor
-// da mão que bateu nela.
+// The motion capture stage: the drummer as joints and bones on a dark floor, the kit in
+// thin lines. Piece faces share the background color, only to hide what is behind them,
+// like a technical drawing. Color appears only on what is playing: each hand has its own,
+// and a piece lights up in the color of the limb that hit it.
 
 import {
   BoxGeometry, BufferAttribute, BufferGeometry, CircleGeometry, Color, CylinderGeometry, DoubleSide, EdgesGeometry, Float32BufferAttribute,
@@ -30,7 +29,7 @@ const bg = new Color(MOCAP.bg);
 const limbColor = Object.fromEntries(Object.entries(MOCAP.limb).map(([k, v]) => [k, new Color(v)]));
 const white = new Color("#ffffff");
 
-// ---------- traços ----------
+// ---------- lines ----------
 function circle(out, r, y, n = SIDES, cx = 0, cz = 0) {
   for (let k = 0; k < n; k++) {
     const a = (k / n) * Math.PI * 2, b = ((k + 1) / n) * Math.PI * 2;
@@ -48,7 +47,7 @@ function lines(points, material) {
   geo.setAttribute("position", new Float32BufferAttribute(points, 3));
   return new LineSegments(geo, material);
 }
-// face da cor do fundo que só esconde o que está atrás; o traço fica por cima
+// a background-colored face that only hides what is behind; the line sits on top
 const fillMaterial = (extra = {}) => new MeshBasicMaterial({ polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1, ...extra });
 
 // ---------- kit ----------
@@ -77,7 +76,7 @@ function createLineKit() {
     return it;
   }
 
-  // tambores: dois aros, parafusos e a pele
+  // drums: two rims, lugs and the head
   for (const [id, d] of Object.entries(DRUMS)) {
     const frame = frameAt(id), it = piece(id, "drum", frame, d.r);
     const pts = [];
@@ -93,7 +92,7 @@ function createLineKit() {
     it.rings = createRings(frame, d.r, 0.004, keep);
   }
 
-  // pratos: anéis na altura do perfil e a cúpula
+  // cymbals: rings at profile height and the bell
   for (const [id, c] of Object.entries(CYMBALS)) {
     const frame = frameAt(id), pivot = new Group();
     frame.add(pivot);
@@ -115,7 +114,7 @@ function createLineKit() {
     it.rings = createRings(frame, c.r, 0.004, keep);
   }
 
-  // estantes: um traço só pra tudo
+  // stands: one line set for everything
   {
     const pts = [], a = new Vector3(), b = new Vector3(), frames = {};
     for (const s of standRods()) {
@@ -129,7 +128,7 @@ function createLineKit() {
     addLines(group, pts, stand);
   }
 
-  // bumbo (y do frame aponta pro baterista)
+  // kick (the frame's y points to the drummer)
   {
     const frame = frameAt("kick"), it = piece("kick", "kick", frame, KICK.r);
     const pts = [];
@@ -150,7 +149,7 @@ function createLineKit() {
     it.rings = createRings(frame, KICK.r, 0.004, keep);
   }
 
-  // pedais e batedor
+  // pedals and beater
   const P = KICK_PEDAL, H = HIHAT_PEDAL;
   const board = (w, len) => keep(new BoxGeometry(w, 0.012, len).translate(0, 0.006, -len / 2));
   const boardEdges = (geo) => keep(new EdgesGeometry(geo));
@@ -172,7 +171,7 @@ function createLineKit() {
   addLines(beater, feltEdge, rest);
   group.add(kickBoard, hhBoard, beater);
 
-  // banco
+  // throne
   {
     const seat = new Group();
     seat.position.set(...THRONE.pos);
@@ -187,7 +186,7 @@ function createLineKit() {
     group.add(seat);
   }
 
-  // chão: grade que some na distância, como o volume de uma captura
+  // floor: a grid that fades with distance, like a capture volume
   {
     const pts = [], cols = [], half = 2.5, step = 0.25, cx = 0.1, cz = -0.3;
     const floor = new Color(MOCAP.grid), c = new Color();
@@ -212,7 +211,7 @@ function createLineKit() {
   }
   group.updateMatrixWorld(true);
 
-  // ---------- cores ----------
+  // ---------- colors ----------
   const rim = new Color(MOCAP.rim), face = new Color(MOCAP.face);
   let muted = new Set();
   function paint() {
@@ -226,7 +225,7 @@ function createLineKit() {
     }
   }
 
-  // ---------- animação ----------
+  // ---------- animation ----------
   const hhState = { press: 0, tap: 0 };
   function update(t, prep, anticipation) {
     for (const it of Object.values(inst)) {
@@ -250,7 +249,7 @@ function createLineKit() {
     return p;
   }
 
-  /** Debug: distância (m) da frente do batedor até a pele do bumbo. */
+  /** Debug: distance (m) from the front of the beater to the kick head. */
   function beaterGap() {
     beater.updateMatrixWorld(true);
     return felt.getWorldPosition(new Vector3()).z - P.feltR - KICK.pos[2];
@@ -263,7 +262,7 @@ function createLineKit() {
   };
 }
 
-// ---------- esqueleto ----------
+// ---------- skeleton ----------
 function createMarkers(rig) {
   const group = new Group();
   group.name = "captura";
@@ -285,12 +284,12 @@ function createMarkers(rig) {
 
   const cyl = new CylinderGeometry(1, 1, 1, 8, 1), ball = new SphereGeometry(1, 12, 8);
   const bonesMat = new MeshBasicMaterial(), ballsMat = new MeshBasicMaterial();
-  const nSeg = segs.length + 2, nBall = joints.length + 2; // + baquetas e pontas
+  const nSeg = segs.length + 2, nBall = joints.length + 2; // + sticks and tips
   const bones = new InstancedMesh(cyl, bonesMat, nSeg), balls = new InstancedMesh(ball, ballsMat, nBall);
   bones.frustumCulled = balls.frustumCulled = false;
   group.add(bones, balls);
 
-  // cabeça: malha de arame, com um risco pra onde ela olha
+  // head: a wire mesh, with a tick where it looks
   const head = new Group();
   head.matrixAutoUpdate = false;
   const skull = new IcosahedronGeometry(1, 1).scale(0.082, 0.102, 0.092);
@@ -303,7 +302,7 @@ function createMarkers(rig) {
   group.add(head);
   const headOffset = new Matrix4().makeTranslation(0, 0.095, -0.012);
 
-  // dedos: traço fino, só pra mostrar a pegada
+  // fingers: a thin line, just to show the grip
   const fingerPairs = [];
   for (const l of HANDS) {
     for (const f of FINGERS) {
@@ -338,7 +337,7 @@ function createMarkers(rig) {
   const glow = { MD: new Color(), ME: new Color(), PD: new Color(), PE: new Color() };
   const hhState = { press: 0, tap: 0 };
   function update(t, prep) {
-    // cor de cada membro: apagada em repouso, cheia no golpe
+    // each limb's color: dim at rest, full at the stroke
     for (const l of HANDS) glow[l].copy(limbColor[l]).lerp(bg, 0.28).lerp(limbColor[l], Math.min(1, flash(prep.limbs[l], t) * 1.6));
     glow.PD.copy(limbColor.PD).lerp(bg, 0.45).lerp(limbColor.PD, Math.min(1, flash(prep.limbs.PD, t) * 1.6));
     glow.PE.copy(limbColor.PE).lerp(bg, 0.45).lerp(limbColor.PE, hihatFoot(prep, t, hhState).press);
@@ -348,7 +347,7 @@ function createMarkers(rig) {
       bones.setColorAt(i, l ? glow[l] : body);
     });
     joints.forEach(([j, r, l], i) => setBall(i, pos(j, pa), r, l ? glow[l] : white));
-    // baqueta: do cabo até a ponta, com a ponta crescendo no golpe
+    // stick: butt to tip, with the tip growing at the stroke
     HANDS.forEach((l, k) => {
       const st = rig.skel.bones[at(`stick.${l}`)];
       pa.set(0, -SKEL.stickBack, 0).applyMatrix4(st);
@@ -374,8 +373,8 @@ function createMarkers(rig) {
 
   return {
     group, update, paint() {},
-    /** Na câmera por cima do ombro, a cabeça ficaria na frente de tudo. */
-    setCamera(name) { head.visible = name !== "baterista"; },
+    /** On the over-the-shoulder camera, the head would sit in front of everything. */
+    setCamera(name) { head.visible = name !== "drummer"; },
     tipWorld: (limb, out = new Vector3()) => rig.tip(limb, out),
     dispose() {
       for (const x of [cyl, ball, skull, wire, gaze, fingerGeo, bonesMat, ballsMat, headFill, headLine, gazeLine, fingerMat, bones, balls]) x.dispose();
@@ -383,7 +382,7 @@ function createMarkers(rig) {
   };
 }
 
-// ---------- estilo ----------
+// ---------- stage ----------
 export function createMocap({ renderer, scene }) {
   const group = new Group();
   group.name = "mocap";

@@ -1,38 +1,37 @@
-// Performance "assada": quando a música abre, cada golpe de cada mão ganha o
-// recorte de um baterista de verdade mais parecido com ele (mesma mão, mesmas
-// peças, intervalo e força parecidos), escolhido uma vez e guardado. O player
-// só lê o plano pelo tempo, então seek, loop e velocidade continuam perfeitos,
-// e a busca pesada fica fora do quadro (num Worker).
+// "Baked" performance: when the song opens, each stroke of each hand gets the most
+// similar segment from a real drummer (same hand, same pieces, similar interval and
+// strength), picked once and stored. The player only reads the plan by time, so seek,
+// loop and speed stay perfect, and the heavy search stays off the frame (in a Worker).
 //
-// O plano é feito só de arrays (passa do Worker pra página sem cópia).
+// The plan is arrays only (it crosses from Worker to page without copying).
 
 import { curveOf, matchMoves } from "./moves.js";
 
 const HANDS = ["MD", "ME"];
-const REPEAT_PENALTY = 0.25; // evita o mesmo recorte duas vezes seguidas
+const REPEAT_PENALTY = 0.25; // avoids the same segment twice in a row
 
-// Hash determinístico em [0, 1): a mesma música sai sempre igual.
+// Deterministic hash in [0, 1): the same song always comes out the same.
 const hash = (a, b) => {
   const x = Math.sin(a * 127.1 + b * 311.7) * 43758.5453;
   return x - Math.floor(x);
 };
 
-/** Altura de preparação que cada força pede (a mesma curva do modelo procedural). */
+/** Windup height each strength asks for (the same curve as the procedural model). */
 const want = (vel) => 0.04 + 0.5 * vel ** 3;
 
 /**
- * Monta o plano. Pra cada mão: t0/t1 de cada golpe coberto por um recorte e a
- * curva de resíduo dele (N x C amostras), já escalada pela força. Com
- * `rigFactory` (createRig de rig.js), assa também o corpo (bakeBody).
- * @param prep resultado de prepareSong
- * @param lib biblioteca (moves.js)
+ * Build the plan. For each hand: t0/t1 of each stroke covered by a segment and its
+ * residual curve (N x C samples), already scaled by strength. With `rigFactory`
+ * (createRig from rig.js), it also bakes the body (bakeBody).
+ * @param prep result of prepareSong
+ * @param lib library (moves.js)
  */
 export function buildPlan(prep, lib, { rigFactory } = {}) {
   const t0 = performance.now();
   const N = lib.N, C = lib.C, D = N * C;
   const plan = { N, C, warp: lib.warp, hands: {}, stats: {} };
   const tmp = new Float32Array(D), cand = new Float32Array(D);
-  // com o esqueleto em mãos, cada candidato é testado no nosso kit antes de ser escolhido
+  // with the skeleton at hand, each candidate is tested on our kit before being picked
   const rig = rigFactory ? rigFactory() : null;
   for (const h of HANDS) {
     const hits = prep.limbs[h] || [];
@@ -49,7 +48,7 @@ export function buildPlan(prep, lib, { rigFactory } = {}) {
       const best = matchMoves(lib, h, q, rig ? 12 : 6);
       if (!best.length) continue;
       const H = lib.hands[h];
-      // força: a preparação acompanha (de leve) a nota de chegada, que no recorte pode ser outra
+      // strength: the windup gently follows the arriving note, which may differ in the segment
       const k2Of = (i) => Math.min(1.3, Math.max(0.75, Math.sqrt(want(q.vb) / want(H.vb[i] / 255))));
       const scaled = (i, out) => {
         curveOf(lib, h, i, tmp);
@@ -57,8 +56,8 @@ export function buildPlan(prep, lib, { rigFactory } = {}) {
         for (let j = 0; j < D; j++) out[j] = tmp[j] * (j % C === C - 1 ? Math.sqrt(k2) : k2);
         return out;
       };
-      // física: o recorte não pode atravessar nenhuma peça, nem mergulhar abaixo
-      // das duas peças do golpe (no kit da captura as alturas eram outras)
+      // physics: the segment can't cross any piece, or dive below the stroke's two
+      // pieces (heights were different on the capture's kit)
       if (rig) {
         for (const c of best) {
           const r = rig.curveClearance(h, A.inst, B.inst, scaled(c[1], cand), 0, N, C, lib.warp);
@@ -66,7 +65,7 @@ export function buildPlan(prep, lib, { rigFactory } = {}) {
           if (pen > 0.008) c[0] += 2 + 40 * pen;
         }
       }
-      // sorteio entre os melhores, com peso pra quem está mais perto
+      // a draw among the best, weighted toward the closest
       for (const c of best) if (c[1] === last) c[0] += REPEAT_PENALTY;
       best.sort((x, y) => x[0] - y[0]);
       const top = best.slice(0, 6);
@@ -95,28 +94,28 @@ export function buildPlan(prep, lib, { rigFactory } = {}) {
 }
 
 const BODY_FPS = 30;
-const LOOK_AHEAD = 0.55;   // s: a cabeça vai olhando pro próximo alvo longe
-const LOOK_GAIN = 0.35;    // fração do ângulo até o alvo
+const LOOK_AHEAD = 0.55;   // s: the head looks toward the next far target
+const LOOK_GAIN = 0.35;    // fraction of the angle to the target
 const LOOK_SMOOTH = 0.18;  // s
 
 /**
- * Corpo assado a 30 Hz: desvios da pelve, da coluna, do pescoço, da cabeça e
- * das clavículas (vetor de rotação no frame do baterista, 8 juntas x 3).
- * - alcance: regressão (dos dados) a partir dos nossos pulsos antes, agora e depois;
- * - groove: trechos reais de 8 tempos tocados no tempo da nossa música,
- *   escolhidos pelo andamento e pela densidade, emendados com uma sobreposição;
- * - olhar: a cabeça vira um pouco pro próximo alvo longe, antes do golpe.
+ * Body baked at 30 Hz: deviations of the pelvis, spine, neck, head and clavicles
+ * (rotation vector in the drummer's frame, 8 joints x 3).
+ * - reach: regression (from the data) on our wrists before, now and after;
+ * - groove: real 8-beat clips played at our song's tempo, picked by tempo and
+ *   density, joined with an overlap;
+ * - gaze: the head turns a little toward the next far target, before the stroke.
  */
 export function bakeBody(prep, lib, rig) {
   const B = lib.body, C = B.outputs, n = Math.ceil(prep.duration * BODY_FPS) + 2;
   const delta = new Float32Array(n * C);
-  // ---------- alcance ----------
+  // ---------- reach ----------
   const wr = new Float32Array(n * 6), a = { x: 0, y: 0, z: 0 }, b = { x: 0, y: 0, z: 0 };
   for (let i = 0; i < n; i++) {
     rig.wrists(i / BODY_FPS, prep, a, b);
     wr.set([a.x, a.y, a.z, b.x, b.y, b.z], i * 6);
   }
-  // tira a média móvel (igual aos dados: o que importa é o desvio)
+  // remove the moving average (as in the data: the deviation is what matters)
   const k = Math.round(B.highpass * BODY_FPS), acc = new Float64Array(6), hp = new Float32Array(n * 6);
   let lo = 0, hi = -1;
   for (let i = 0; i < n; i++) {
@@ -137,13 +136,13 @@ export function bakeBody(prep, lib, rig) {
       delta[i * C + o] = v;
     }
   }
-  // ---------- groove (em tempo de música) ----------
+  // ---------- groove (in musical time) ----------
   const clock = prep.clock, nb = Math.ceil(clock.beatAt(prep.duration)) + 2, spb = B.spb, L = B.clipLen;
   const groove = new Float32Array((nb + 1) * spb * C);
   const handT = [...prep.limbs.MD, ...prep.limbs.ME].map((h) => h.t).sort((p, q) => p - q);
   const kickT = prep.limbs.PD.map((h) => h.t);
   const countIn = (arr, t0, t1) => { let c = 0; for (const t of arr) if (t >= t0 && t < t1) c++; return c; };
-  const timeOfBeat = (bt) => { // inverso do relógio (busca binária)
+  const timeOfBeat = (bt) => { // inverse of the clock (binary search)
     let x0 = -60, x1 = prep.duration + 60;
     for (let it = 0; it < 40; it++) { const m = (x0 + x1) / 2; if (clock.beatAt(m) < bt) x0 = m; else x1 = m; }
     return (x0 + x1) / 2;
@@ -163,7 +162,7 @@ export function bakeBody(prep, lib, rig) {
     const pick = best[Math.floor(hash(slot, 7) * best.length)][1];
     recent.push(pick);
     if (recent.length > 6) recent.shift();
-    // escreve o trecho; no tempo que sobrepõe o anterior, mistura
+    // write the clip; on the beat that overlaps the previous one, blend
     for (let j = 0; j < L; j++) {
       const at = s0 * spb + j;
       if (at >= (nb + 1) * spb) break;
@@ -178,7 +177,7 @@ export function bakeBody(prep, lib, rig) {
     const bt = Math.max(0, clock.beatAt(i / BODY_FPS)) * spb, j = Math.min((nb + 1) * spb - 2, Math.floor(bt)), f = bt - j;
     for (let c = 0; c < C; c++) delta[i * C + c] += groove[j * C + c] * (1 - f) + groove[(j + 1) * C + c] * f;
   }
-  // ---------- olhar ----------
+  // ---------- gaze ----------
   const look = new Float32Array(n * 2), head = rig.headRest;
   const far = (inst) => inst !== "snare" && inst !== "hihat";
   const dir = { x: 0, y: 0, z: 0 };
@@ -200,7 +199,7 @@ export function bakeBody(prep, lib, rig) {
     }
     if (wsum > 0) { look[i * 2] = (yaw / Math.max(1, wsum)) * LOOK_GAIN; look[i * 2 + 1] = (pitch / Math.max(1, wsum) + 0.55) * LOOK_GAIN * 0.5; }
   }
-  // suaviza (média móvel) e soma no pescoço e na cabeça
+  // smooth (moving average) and add to the neck and head
   const ks = Math.round(LOOK_SMOOTH * BODY_FPS), ny = B.joints.indexOf("pescoco") * 3, hy = B.joints.indexOf("cabeca") * 3;
   for (let i = 0; i < n; i++) {
     let sy = 0, sp = 0, cnt = 0;
@@ -212,7 +211,7 @@ export function bakeBody(prep, lib, rig) {
   return { fps: BODY_FPS, channels: C, joints: B.joints, delta };
 }
 
-/** Arrays do plano (pra transferir do Worker sem copiar). */
+/** The plan's arrays (to transfer from the Worker without copying). */
 export function planBuffers(plan) {
   const out = HANDS.flatMap((h) => {
     const p = plan.hands[h];
@@ -222,7 +221,7 @@ export function planBuffers(plan) {
   return out;
 }
 
-/** Índice do recorte que cobre t na mão h, ou -1. */
+/** Index of the segment covering t on hand h, or -1. */
 export function segmentAt(plan, h, t) {
   const p = plan.hands[h];
   if (!p || !p.t0.length) return -1;

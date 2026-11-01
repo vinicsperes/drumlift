@@ -1,18 +1,18 @@
-// Utilidades do player: DOM, tempo, busca binária, grade rítmica e preferências.
+// Player utilities: DOM, time, binary search, rhythmic grid and preferences.
 
 export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 export const clamp = (x, a, b) => (x < a ? a : x > b ? b : x);
 
-/** 83.4 -> "1:23" (ou "1:23.4" com décimos). */
+/** 83.4 -> "1:23" (or "1:23.4" with tenths). */
 export function fmt(t, tenths = false) {
   t = Math.max(0, t || 0);
   const m = Math.floor(t / 60), s = t - m * 60;
   return tenths ? `${m}:${s.toFixed(1).padStart(4, "0")}` : `${m}:${String(Math.floor(s)).padStart(2, "0")}`;
 }
 
-/** Interpolação linear em tabela crescente xs -> ys, extrapolando nas pontas. */
+/** Linear interpolation over increasing xs -> ys, extrapolating at the ends. */
 export function interp(x, xs, ys) {
   const n = xs.length;
   if (x <= xs[0]) return ys[0] + ((x - xs[0]) * (ys[1] - ys[0])) / (xs[1] - xs[0]);
@@ -22,28 +22,28 @@ export function interp(x, xs, ys) {
   return ys[lo] + ((x - xs[lo]) * (ys[hi] - ys[lo])) / (xs[hi] - xs[lo]);
 }
 
-/** Primeiro índice com key(arr[i]) >= x. */
+/** First index with key(arr[i]) >= x. */
 export function lowerBound(arr, x, key = (v) => v) {
   let lo = 0, hi = arr.length;
   while (lo < hi) { const m = (lo + hi) >> 1; if (key(arr[m]) < x) lo = m + 1; else hi = m; }
   return lo;
 }
 
-/** localStorage com try/catch (aba anônima, armazenamento bloqueado...).
- *  Até virar drumlift o prefixo era "drumsomething.": ler o antigo mantém os ajustes de quem já usava. */
+/** localStorage with try/catch (private tab, blocked storage...).
+ *  The prefix was "drumsomething." before the rename: reading the old one keeps existing settings. */
 export function pref(key, value) {
   try {
     if (value === undefined) return localStorage.getItem(`drumlift.${key}`) ?? localStorage.getItem(`drumsomething.${key}`);
     localStorage.setItem(`drumlift.${key}`, String(value));
-  } catch { /* sem preferências, tudo bem */ }
+  } catch { /* no preferences, that's fine */ }
   return null;
 }
 
-export const SUBDIV_NAME = { 2: "colcheias", 3: "tercinas", 4: "semicolcheias", 6: "sextinas", 8: "fusas" };
+export const SUBDIV_NAME = { 2: "eighths", 3: "triplets", 4: "sixteenths", 6: "sextuplets", 8: "thirty-seconds" };
 
 /**
- * Grade rítmica da música. A posição de uma nota é o passo dela; o tempo
- * real sai das batidas detectadas, então a grade segue a banda.
+ * The song's rhythmic grid. A note's position is its step; the real time comes from
+ * the detected beats, so the grid follows the band.
  */
 export function makeGrid(song) {
   const idx = song.beats.map((_, i) => i);
@@ -51,7 +51,7 @@ export function makeGrid(song) {
   const spb = bpb * subdiv;
   const nBars = Math.floor((song.beats.length - 1) / bpb);
   const stepTime = (step) => interp(step / subdiv + offset, idx, song.beats);
-  /** Segundos -> posição em tempos (batidas), alinhada com os passos das notas. */
+  /** Seconds -> position in beats, aligned with the notes' steps. */
   const timeToBeat = (t) => interp(t, song.beats, idx) - offset;
   return {
     spb, bpb, subdiv, nBars,
@@ -62,13 +62,13 @@ export function makeGrid(song) {
   };
 }
 
-/** "No One Knows - QOTSA" -> { name: "No One Knows", artist: "QOTSA" }. */
+/** "QOTSA - No One Knows" -> { name: "No One Knows", artist: "QOTSA" }. */
 export function splitTitle(title = "") {
   const m = title.match(/^(.*?)\s+[-–—]\s+(.*)$/);
   return m ? { name: m[2], artist: m[1] } : { name: title, artist: "" };
 }
 
-/** Avisinho no rodapé. */
+/** Small footer message. */
 export function toast(msg, ms = 2400) {
   const el = $("#toast");
   if (!el) return;

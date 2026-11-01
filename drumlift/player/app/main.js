@@ -1,5 +1,5 @@
-// Player do drumlift: liga o motor de áudio, o baterista 3D (o palco, que
-// ocupa a tela toda), a faixa de notas, a tab completa e os controles.
+// drumlift player: wires up the audio engine, the 3D drummer (the stage, which fills the
+// screen), the note lane, the full tab and the controls.
 
 import { $, $$, SUBDIV_NAME, clamp, fmt, lowerBound, makeGrid, pref, splitTitle, toast } from "./util.js";
 import { createEngine } from "./audio.js";
@@ -9,9 +9,9 @@ import { prepareSong } from "../kit3d/timeline.js";
 import { MOCAP } from "../kit3d/theme.js";
 
 const PIECES = ["crash", "ride", "hihat", "snare", "tom", "kick"];
-const CAMS = ["frente", "baterista", "lado", "cima"];
-const CAM_LABEL = { frente: "Frente", baterista: "Baterista", lado: "Lado", cima: "Cima" };
-const KIT_LABEL = { acustico: "Acústico", 808: "808", bipes: "Bipes", custom: "Seus samples" };
+const CAMS = ["front", "drummer", "side", "top"];
+const CAM_LABEL = { front: "Front", drummer: "Drummer", side: "Side", top: "Top" };
+const KIT_LABEL = { acoustic: "Acoustic", 808: "808", beeps: "Beeps", custom: "Your samples" };
 
 const state = { song: null, notes: [], muted: new Set(), solo: null, anchorBar: 0, loopPicked: false };
 let grid, engine, lane, sheet, kit3d = null;
@@ -19,12 +19,12 @@ const darkMQ = matchMedia("(prefers-color-scheme: dark)");
 
 boot().catch((e) => {
   console.error(e);
-  $("#loading .label").textContent = `Não deu pra abrir: ${e.message}`;
+  $("#loading .label").textContent = `Could not open: ${e.message}`;
 });
 
 async function boot() {
   const res = await fetch("song.json", { cache: "no-store" });
-  if (!res.ok) throw new Error("song.json não encontrado");
+  if (!res.ok) throw new Error("song.json not found");
   const song = await res.json();
   state.song = song;
   state.notes = song.notes.map((n) => ({ ...n }));
@@ -78,7 +78,7 @@ async function boot() {
   $("#play").disabled = false;
 }
 
-// ---------- música ----------
+// ---------- song ----------
 function masthead(song) {
   const { name, artist } = splitTitle(song.title);
   document.title = `${name} · drumlift`;
@@ -87,16 +87,16 @@ function masthead(song) {
   const [lo, hi] = song.tempo_range || [song.tempo, song.tempo];
   const range = hi - lo >= 2 ? ` (${Math.round(lo)}–${Math.round(hi)})` : "";
   $("#meta").textContent = `${Math.round(song.tempo)} BPM${range} · ${song.beats_per_bar}/4 · ` +
-    `${SUBDIV_NAME[song.subdiv] || `${song.subdiv} por tempo`} · ${grid.nBars} compassos`;
+    `${SUBDIV_NAME[song.subdiv] || `${song.subdiv} per beat`} · ${grid.nBars} bars`;
   $("#ro-bars").textContent = `/${grid.nBars}`;
 }
 
-/** A música com as notas atuais (editadas ou não), cada uma com seu tempo. */
+/** The song with its current notes (edited or not), each with its time. */
 function songWithNotes() {
   return { ...state.song, notes: state.notes.map((n) => ({ ...n, t: grid.stepTime(n.step) })) };
 }
 
-/** Notas mudaram (abriu, editou, salvou): recalcula as mãos e avisa todo mundo. */
+/** Notes changed (opened, edited, saved): recompute the hands and tell everyone. */
 function notesChanged() {
   const song = songWithNotes();
   const prep = prepareSong(song);
@@ -108,14 +108,14 @@ function notesChanged() {
   layout();
 }
 
-// ---------- baterista 3D ----------
+// ---------- 3D drummer ----------
 async function mount3D() {
   try {
     const { mountKit3D } = await import("../kit3d/kit3d.js");
     kit3d = mountKit3D($("#stage"), {
       song: songWithNotes(),
       getTime: () => engine.time,
-      camera: CAMS.includes(pref("kit3d.camera")) ? pref("kit3d.camera") : "frente",
+      camera: CAMS.includes(pref("kit3d.camera")) ? pref("kit3d.camera") : "front",
       anticipation: pref("kit3d.anticipation") === "1",
       transparent: true,
       legend: false,
@@ -125,11 +125,11 @@ async function mount3D() {
     syncUI();
   } catch (e) {
     console.error(e);
-    toast(`Não deu pra abrir o baterista 3D: ${e.message}`, 6000);
+    toast(`Could not open the 3D drummer: ${e.message}`, 6000);
   }
 }
 
-/** Partes da tela cobertas por painéis: o baterista fica centrado no resto. */
+/** Parts of the screen covered by panels: the drummer stays centered in the rest. */
 function insets() {
   const W = innerWidth, H = innerHeight;
   const dock = $("#dock").getBoundingClientRect();
@@ -148,7 +148,7 @@ function layout() {
   kit3d?.setInsets(insets());
 }
 
-// ---------- peças silenciadas ----------
+// ---------- muted pieces ----------
 function mutedSet() {
   return state.solo ? new Set(PIECES.filter((p) => p !== state.solo)) : new Set(state.muted);
 }
@@ -160,7 +160,7 @@ function toggleMute(piece, solo) {
   kit3d?.setMuted(mutedSet());
 }
 
-// ---------- tema ----------
+// ---------- theme ----------
 function hexToRgba(hex, a) {
   const m = hex.replace("#", "");
   const n = parseInt(m.length === 3 ? m.replace(/./g, "$&$&") : m, 16);
@@ -179,7 +179,7 @@ function applyTheme() {
   });
 }
 
-// ---------- ajustes ----------
+// ---------- settings ----------
 function setupPanel() {
   const panel = $("#panel"), toggle = $("#panel-toggle");
   const saved = pref("panel");
@@ -208,7 +208,7 @@ function setupPanel() {
 
   const kit = $("#kit");
   for (const k of engine.kitNames()) kit.add(new Option(KIT_LABEL[k] || k, k));
-  kit.value = engine.kitNames().includes(pref("kit")) ? pref("kit") : "acustico";
+  kit.value = engine.kitNames().includes(pref("kit")) ? pref("kit") : "acoustic";
   engine.setKit(kit.value);
   kit.onchange = () => { engine.setKit(kit.value); pref("kit", kit.value); };
   $("#metronome").onchange = (e) => engine.setMetronome(e.target.checked);
@@ -225,7 +225,7 @@ function setCamera(name) {
   syncUI();
 }
 
-// ---------- transporte ----------
+// ---------- transport ----------
 const currentBar = () => clamp(Math.floor((grid.timeToStep(engine.time) + 0.15) / grid.spb), 0, grid.nBars - 1);
 const seekBar = (bar) => engine.seek(grid.barTime(clamp(bar, 0, grid.nBars - 1)) - 0.03);
 
@@ -247,7 +247,7 @@ function setupTransport() {
   $("#loop").onclick = toggleLoop;
   $("#sheet-btn").onclick = () => sheet.toggle();
 
-  // barra de posição
+  // position bar
   const el = $("#scrub"), tip = $("#scrub-tip");
   let dragging = false;
   const timeAt = (x) => {
@@ -257,7 +257,7 @@ function setupTransport() {
   const showTip = (t, x) => {
     const r = el.getBoundingClientRect();
     const bar = clamp(Math.floor(grid.timeToStep(t) / grid.spb), 0, grid.nBars - 1);
-    tip.textContent = `compasso ${bar + 1} · ${fmt(t)}`;
+    tip.textContent = `bar ${bar + 1} · ${fmt(t)}`;
     tip.style.left = `${clamp(x - r.left, 40, r.width - 40)}px`;
   };
   const place = (t) => {
@@ -288,11 +288,11 @@ function setupTransport() {
   setupTransport.dragging = () => dragging;
 }
 
-/** Botões e rótulos que dependem do estado do motor. */
+/** Buttons and labels that depend on the engine's state. */
 function syncUI() {
   if (!engine) return;
   document.body.classList.toggle("playing", engine.playing);
-  $("#play").setAttribute("aria-label", engine.playing ? "Pausar (espaço)" : "Tocar (espaço)");
+  $("#play").setAttribute("aria-label", engine.playing ? "Pause (space)" : "Play (space)");
   for (const b of $$("#ab [data-mode]")) b.classList.toggle("on", b.dataset.mode === engine.mode);
   const l = engine.loop;
   $("#loop").classList.toggle("on", l.on);
@@ -311,7 +311,7 @@ function syncUI() {
   for (const b of $$("#cams [data-cam]")) b.classList.toggle("on", kit3d?.camera === b.dataset.cam);
 }
 
-// ---------- quadro ----------
+// ---------- frame ----------
 const last = { bar: -1, beat: -1, sec: -1, bpm: -1 };
 function localBpm(t) {
   const b = state.song.beats, i = clamp(lowerBound(b, t), 2, b.length - 3);
@@ -337,7 +337,7 @@ function frame() {
   if (!setupTransport.dragging()) setupTransport.place(t);
 }
 
-// ---------- teclado ----------
+// ---------- keyboard ----------
 function setupKeys() {
   addEventListener("keydown", (e) => {
     const k = e.key.toLowerCase(), mod = e.ctrlKey || e.metaKey;

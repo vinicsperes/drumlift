@@ -1,10 +1,10 @@
-// Métricas de movimento, iguais pro baterista real e pro nosso. Recebem uma
-// "trilha": posições (m) quadro a quadro da ponta da baqueta, pulso, cotovelo,
-// ombro (direita e esquerda), peito e cabeça, mais os golpes de cada mão.
+// Motion metrics, the same for the real drummer and ours. They take a "track": positions
+// (m) frame by frame of the stick tip, wrist, elbow, shoulder (right and left), chest and
+// head, plus each hand's strokes.
 //
-//   trilha = { fps, n, tip: [D, E], wrist: [D, E], elbow: [D, E],
+//   track = { fps, n, tip: [R, L], wrist: [R, L], elbow: [R, L],
 //              chest, head, strokes: [[{t, vel, inst}], [...]] }
-//   (cada posição é um Float32Array com x, y, z por quadro)
+//   (each position is a Float32Array with x, y, z per frame)
 
 const CYMBALS = new Set(["hihat", "ride", "crash"]);
 
@@ -15,7 +15,7 @@ const median = (a) => {
 };
 const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN);
 
-/** Interpolação t -> posição em tempos (batidas). */
+/** Interpolation t -> position in beats. */
 function beatPos(beats, t) {
   const n = beats.length;
   if (t <= beats[0]) return (t - beats[0]) / (beats[1] - beats[0]);
@@ -30,7 +30,7 @@ export function measure(tr, beats) {
   const y = (arr, i) => arr[i * 3 + 1];
   const out = { strokes: 0 };
 
-  // ---------- golpes: preparação, divisão entre juntas, quem vai na frente ----------
+  // ---------- strokes: windup, split between joints, who leads ----------
   const prep = [], wrist = { cym: [], drum: [] }, elbow = { cym: [], drum: [] }, lead = [], speed = [];
   const travelJerk = [], travelArc = [];
   for (const h of [0, 1]) {
@@ -59,7 +59,7 @@ export function measure(tr, beats) {
         elbow[cls].push((eMax - y(eA, i1)) / p);
         lead.push(((iw - it) / tr.fps) * 1000);
       }
-      // troca de peça: suavidade (jerk normalizado) e arco do caminho da ponta
+      // piece change: smoothness (normalized jerk) and arc of the tip's path
       if (b.inst !== a.inst && gap >= 0.15) {
         const s0 = f(a.t + 0.02), s1 = f(b.t - 0.02);
         if (s1 - s0 > 8) {
@@ -77,7 +77,7 @@ export function measure(tr, beats) {
           }
           const T = (s1 - s0) / tr.fps;
           if (L > 0.03) travelJerk.push(Math.sqrt((0.5 * J * T ** 5) / (L * L)));
-          // arco: maior distância do caminho até a reta entre as pontas
+          // arc: greatest distance from the path to the line between the ends
           const A = [tipA[s0 * 3], tipA[s0 * 3 + 1], tipA[s0 * 3 + 2]], B = [tipA[s1 * 3], tipA[s1 * 3 + 1], tipA[s1 * 3 + 2]];
           const AB = B.map((x, c) => x - A[c]), l2 = AB.reduce((s, x) => s + x * x, 0) || 1;
           let arc = 0;
@@ -93,7 +93,7 @@ export function measure(tr, beats) {
   }
   out.strokes = prep.length;
   const byVel = (lo, hi) => mean(prep.filter((p) => p.vel >= lo && p.vel < hi).map((p) => p.cm));
-  // inclinação da reta altura (cm) x força (0..1)
+  // slope of the line height (cm) x strength (0..1)
   const mv = mean(prep.map((p) => p.vel)), mc = mean(prep.map((p) => p.cm));
   let sxy = 0, sxx = 0;
   for (const p of prep) { sxy += (p.vel - mv) * (p.cm - mc); sxx += (p.vel - mv) ** 2; }
@@ -111,8 +111,8 @@ export function measure(tr, beats) {
   out.speed = median(speed);
   out.travel = { jerk: median(travelJerk), arc: median(travelArc), n: travelJerk.length };
 
-  // ---------- corpo: balanço do peito e da cabeça, aceno no pulso ----------
-  const win = Math.round(tr.fps); // tira a deriva lenta (média de ±1 s)
+  // ---------- body: chest and head sway, nod on the pulse ----------
+  const win = Math.round(tr.fps); // removes slow drift (mean of ±1 s)
   function residual(arr) {
     const res = new Float32Array(tr.n * 3), acc = [0, 0, 0];
     let lo = 0, hi = -1;
@@ -126,7 +126,7 @@ export function measure(tr, beats) {
   }
   const rms = (res) => { let s = 0; for (let i = 0; i < res.length; i++) s += res[i] * res[i]; return Math.sqrt(s / tr.n) * 1000; };
   const chest = residual(tr.chest), head = residual(tr.head);
-  // só enquanto a música toca (entre o primeiro e o último golpe)
+  // only while the song plays (between the first and last stroke)
   const all = tr.strokes.flat().map((s) => s.t);
   const first = f(Math.min(...all)), last = f(Math.max(...all));
   const slice = (res) => res.subarray(first * 3, (last + 1) * 3);
@@ -147,7 +147,7 @@ export function measure(tr, beats) {
   out.body = { chest: rmsSlice(chest), head: rmsSlice(head), bob: (mx - mn) * 1000, bobPhase: (at + 0.5) / 16 };
   void rms;
 
-  // ---------- mão parada ----------
+  // ---------- idle hand ----------
   const idle = [];
   for (const h of [0, 1]) {
     const st = tr.strokes[h], w = tr.wrist[h];
@@ -166,24 +166,24 @@ export function measure(tr, beats) {
   return out;
 }
 
-/** Linhas da tabela: [rótulo, chave, unidade, casas]. */
+/** Table rows: [label, key, unit, decimals]. */
 export const ROWS = [
-  ["Preparação no acento", (m) => m.prep.accent, "cm", 1],
-  ["Preparação normal", (m) => m.prep.normal, "cm", 1],
-  ["Preparação fraca", (m) => m.prep.soft, "cm", 1],
-  ["Altura × força (inclinação)", (m) => m.prep.slope, "cm", 1],
-  ["Preparação nos pratos", (m) => m.prep.cym, "cm", 1],
-  ["Preparação nos tambores", (m) => m.prep.drum, "cm", 1],
-  ["Pulso / ponta — pratos", (m) => m.share.wristCym, "×", 2],
-  ["Pulso / ponta — tambores", (m) => m.share.wristDrum, "×", 2],
-  ["Cotovelo / ponta — pratos", (m) => m.share.elbowCym, "×", 2],
-  ["Cotovelo / ponta — tambores", (m) => m.share.elbowDrum, "×", 2],
-  ["Pico do pulso − pico da ponta", (m) => m.lead, "ms", 0],
-  ["Velocidade máx. da ponta", (m) => m.speed, "m/s", 1],
-  ["Trocas: jerk normalizado", (m) => m.travel.jerk, "", 0],
-  ["Trocas: arco do caminho", (m) => m.travel.arc, "cm", 1],
-  ["Balanço do peito", (m) => m.body.chest, "mm", 1],
-  ["Balanço da cabeça", (m) => m.body.head, "mm", 1],
-  ["Aceno da cabeça no pulso", (m) => m.body.bob, "mm", 1],
-  ["Mão parada (deriva)", (m) => m.idle, "mm", 1],
+  ["Windup on accents", (m) => m.prep.accent, "cm", 1],
+  ["Normal windup", (m) => m.prep.normal, "cm", 1],
+  ["Soft windup", (m) => m.prep.soft, "cm", 1],
+  ["Height x strength (slope)", (m) => m.prep.slope, "cm", 1],
+  ["Windup on cymbals", (m) => m.prep.cym, "cm", 1],
+  ["Windup on drums", (m) => m.prep.drum, "cm", 1],
+  ["Wrist / tip, cymbals", (m) => m.share.wristCym, "×", 2],
+  ["Wrist / tip, drums", (m) => m.share.wristDrum, "×", 2],
+  ["Elbow / tip, cymbals", (m) => m.share.elbowCym, "×", 2],
+  ["Elbow / tip, drums", (m) => m.share.elbowDrum, "×", 2],
+  ["Wrist peak minus tip peak", (m) => m.lead, "ms", 0],
+  ["Max tip speed", (m) => m.speed, "m/s", 1],
+  ["Changes: normalized jerk", (m) => m.travel.jerk, "", 0],
+  ["Changes: path arc", (m) => m.travel.arc, "cm", 1],
+  ["Chest sway", (m) => m.body.chest, "mm", 1],
+  ["Head sway", (m) => m.body.head, "mm", 1],
+  ["Head nod on the pulse", (m) => m.body.bob, "mm", 1],
+  ["Idle hand (drift)", (m) => m.idle, "mm", 1],
 ];

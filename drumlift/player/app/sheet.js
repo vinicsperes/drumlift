@@ -1,7 +1,7 @@
-// Tab completa: a grade de todos os compassos numa gaveta por cima do palco,
-// com a coluna atual acompanhando a música. No modo de edição, clicar numa
-// casa põe ou tira a nota (Alt+clique na caixa = nota fantasma), Ctrl+Z desfaz
-// e Salvar regrava tab.txt, drums.mid e os áudios no servidor.
+// Full tab: the grid of all bars in a drawer over the stage, with the current column
+// following the song. In edit mode, clicking a cell adds or removes the note (Alt+click
+// on the snare = ghost note), Ctrl+Z undoes and Save rewrites tab.txt, drums.mid and the
+// audio on the server.
 
 import { $, fmt, toast } from "./util.js";
 
@@ -81,7 +81,7 @@ export function createSheet(root, { grid, state, getTime, onSeek, onChange, onSa
     const b = barEls[bar];
     return b ? b.el.querySelectorAll(`.grid > .c:nth-child(${grid.spb}n + ${col + 1})`) : [];
   }
-  /** Coluna da música agora; rola a gaveta pra linha atual enquanto toca. */
+  /** The song's column now; scrolls the drawer to the current line while playing. */
   function update(t, playing) {
     if (!isOpen() || !barEls.length) return;
     const step = Math.floor(grid.timeToStep(t) + 0.15);
@@ -102,7 +102,7 @@ export function createSheet(root, { grid, state, getTime, onSeek, onChange, onSa
     cur = { bar, col };
   }
 
-  // ---------- edição ----------
+  // ---------- editing ----------
   function refreshCell(piece, step) {
     const el = body.querySelector(`.c[data-p="${piece}"][data-s="${step}"]`);
     if (!el) return;
@@ -115,7 +115,7 @@ export function createSheet(root, { grid, state, getTime, onSeek, onChange, onSa
     dirty = d;
     saveBtn.disabled = !d;
     undoBtn.disabled = !undo.length;
-    saveBtn.textContent = d ? "Salvar •" : "Salvar";
+    saveBtn.textContent = d ? "Save •" : "Save";
   }
   function toggleNote(piece, step, ghost) {
     const notes = state.notes;
@@ -163,9 +163,9 @@ export function createSheet(root, { grid, state, getTime, onSeek, onChange, onSa
       markDirty(false);
       onSaved(song);
       render();
-      toast("Salvo: tab.txt, drums.mid e áudios atualizados");
+      toast("Saved: tab.txt, drums.mid and audio updated");
     } catch (e) {
-      toast(`Erro ao salvar: ${e.message}`, 5000);
+      toast(`Could not save: ${e.message}`, 5000);
       markDirty(true);
     }
   }
@@ -174,10 +174,10 @@ export function createSheet(root, { grid, state, getTime, onSeek, onChange, onSa
     editBtn.classList.toggle("on", on);
     root.classList.toggle("editing", on);
     render();
-    if (on) toast("Editando: clique põe ou tira a nota · Alt+clique na caixa = nota fantasma", 3500);
+    if (on) toast("Editing: click adds or removes a note · Alt+click on the snare = ghost note", 3500);
   }
 
-  // ---------- eventos ----------
+  // ---------- events ----------
   body.addEventListener("click", (e) => {
     const cell = e.target.closest(".c[data-p]");
     if (cell && editing) { toggleNote(cell.dataset.p, +cell.dataset.s, e.altKey); return; }

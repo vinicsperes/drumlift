@@ -1,12 +1,12 @@
-// Anel de antecipação: encolhe até o tamanho da peça no instante do golpe,
-// com 1 tempo de antecedência. Igual nos dois estilos.
+// Anticipation ring: shrinks to the piece's size at the moment of the stroke, starting
+// 1 beat ahead.
 
 import { DoubleSide, Mesh, MeshBasicMaterial, RingGeometry } from "../vendor/three.module.min.js";
 import { upperBound } from "./timeline.js";
 
 export const RINGS_PER_PIECE = 4;
 
-/** Cria os anéis (invisíveis) de uma peça, deitados no plano do frame, em `y`. */
+/** Create a piece's (invisible) rings, lying in the frame's plane, at `y`. */
 export function createRings(parent, r, y, keep) {
   const geo = keep(new RingGeometry(r * 0.93, r, 48, 1));
   geo.rotateX(-Math.PI / 2);
@@ -23,7 +23,7 @@ export function createRings(parent, r, y, keep) {
   return rings;
 }
 
-/** Mostra os anéis dos próximos golpes (até 1 tempo à frente) no tempo t. */
+/** Show the rings of the next strokes (up to 1 beat ahead) at time t. */
 export function updateRings(rings, hits, t, clock, show) {
   let shown = 0;
   if (show) {

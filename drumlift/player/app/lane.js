@@ -1,8 +1,8 @@
-// Faixa de notas: as próximas notas vêm da direita até a linha do "agora", uma
-// linha por peça, com a mão que toca cada uma (D/E, a mesma conta do baterista
-// 3D) e os compassos marcados. Arrastar marca um loop; clicar pula pra lá;
-// clicar no nome da peça silencia ela (Shift+clique: só ela).
-// Desenhada num canvas 2D a cada quadro, a partir do tempo da música.
+// Note lane: upcoming notes come from the right to the "now" line, one row per piece,
+// with the hand playing each (R/L, the same logic as the 3D drummer) and the bars marked.
+// Dragging marks a loop; clicking jumps there; clicking a piece's name mutes it
+// (Shift+click: solo).
+// Drawn on a 2D canvas each frame, from the song's time.
 
 import { clamp, lowerBound } from "./util.js";
 
@@ -10,7 +10,7 @@ const ORDER = ["crash", "ride", "hihat", "snare", "tom", "kick"];
 const LABEL = { crash: "CR", ride: "RD", hihat: "HH", snare: "SD", tom: "T", kick: "BD" };
 const CYMBAL = new Set(["crash", "ride", "hihat"]);
 const ROW_H = 20, HEAD = 18, FOOT = 6, LABEL_W = 46, NOW = 0.22;
-const POP = 0.2; // s de "pulo" da nota quando passa pela linha do agora
+const POP = 0.2; // s of a note's "pop" as it crosses the now line
 
 export function createLane(canvas, { grid, getTime, getLoop, getMuted = () => new Set(), onSeek, onLoopSelect, onLabel }) {
   const g = canvas.getContext("2d");
@@ -18,7 +18,7 @@ export function createLane(canvas, { grid, getTime, getLoop, getMuted = () => ne
   let notes = [], rows = [], colors = null;
   let drag = null;
 
-  /** Altura que a faixa precisa pra estas peças. */
+  /** Height the lane needs for these pieces. */
   const heightFor = (n) => HEAD + Math.max(1, n) * ROW_H + FOOT;
 
   function setNotes(list) {
@@ -41,7 +41,7 @@ export function createLane(canvas, { grid, getTime, getLoop, getMuted = () => ne
     canvas.height = Math.round(H * dpr);
   }
 
-  // escala: tempos por pixel, conforme a largura (celular vê menos compassos)
+  // scale: beats per pixel, by width (phones see fewer bars)
   const ppb = () => clamp(W / 14, 58, 118);
   const x0 = () => Math.max(LABEL_W + 30, W * NOW);
   const beatAtX = (x, now) => now + (x - x0()) / ppb();
@@ -86,13 +86,13 @@ export function createLane(canvas, { grid, getTime, getLoop, getMuted = () => ne
       g.arc(x, y, r, 0, Math.PI * 2);
       g.fill();
     }
-    // mão: D (direita) ou E (esquerda), pequeno, na cor do membro
+    // hand: R or L, small, in the limb's color
     if (n.limb === "MD" || n.limb === "ME") {
       g.globalAlpha = alpha;
       g.fillStyle = colors.limb[n.limb];
       g.font = "700 9px ui-monospace, Menlo, monospace";
       g.textBaseline = "middle";
-      g.fillText(n.limb === "MD" ? "D" : "E", x + 8.5, y - 6);
+      g.fillText(n.limb === "MD" ? "R" : "L", x + 8.5, y - 6);
     }
   }
 
@@ -106,7 +106,7 @@ export function createLane(canvas, { grid, getTime, getLoop, getMuted = () => ne
     const b0 = beatAtX(LABEL_W, now), b1 = beatAtX(W, now);
     const xb = (beat) => ox + (beat - now) * p;
 
-    // linhas das peças
+    // piece rows
     g.globalAlpha = 1;
     g.fillStyle = colors.hair;
     for (let i = 1; i < rows.length; i++) g.fillRect(LABEL_W, HEAD + i * ROW_H, W - LABEL_W, 1);
@@ -125,7 +125,7 @@ export function createLane(canvas, { grid, getTime, getLoop, getMuted = () => ne
       g.fillRect(xa, 0, xe - xa, H);
     }
 
-    // tempos e compassos
+    // beats and bars
     g.font = "500 10px ui-monospace, Menlo, monospace";
     g.textBaseline = "middle";
     for (let k = Math.floor(b0); k <= Math.ceil(b1); k++) {
@@ -140,7 +140,7 @@ export function createLane(canvas, { grid, getTime, getLoop, getMuted = () => ne
       }
     }
 
-    // notas visíveis (pelos passos, que já estão em ordem)
+    // visible notes (by step, already in order)
     const i0 = lowerBound(notes, Math.floor(b0 * grid.subdiv) - 1, (n) => n.step);
     for (let i = i0; i < notes.length; i++) {
       const n = notes[i];
@@ -156,14 +156,14 @@ export function createLane(canvas, { grid, getTime, getLoop, getMuted = () => ne
     }
     g.globalAlpha = 1;
 
-    // linha do agora
+    // now line
     g.fillStyle = colors.now;
     g.fillRect(Math.round(ox) - 1, 2, 2, H - 4);
     g.beginPath();
     g.moveTo(ox - 5, 1); g.lineTo(ox + 5, 1); g.lineTo(ox, 7);
     g.fill();
 
-    // rótulos das peças por cima de um degradê (as notas somem por trás)
+    // piece labels over a gradient (notes fade behind them)
     const grad = g.createLinearGradient(0, 0, LABEL_W + 18, 0);
     grad.addColorStop(0, colors.card);
     grad.addColorStop(0.7, colors.card);
@@ -185,7 +185,7 @@ export function createLane(canvas, { grid, getTime, getLoop, getMuted = () => ne
     g.globalAlpha = 1;
   }
 
-  // ---------- clique e arraste ----------
+  // ---------- click and drag ----------
   function dragBars() {
     const now = drag.now;
     const a = Math.floor(beatAtX(drag.x0, now) / grid.bpb), b = Math.floor(beatAtX(drag.x1, now) / grid.bpb);
@@ -214,7 +214,7 @@ export function createLane(canvas, { grid, getTime, getLoop, getMuted = () => ne
       const [a, b] = dragBars();
       onLoopSelect(a, b);
     } else if (e.type === "pointerup") {
-      // pula pro começo do tempo clicado
+      // jump to the start of the clicked beat
       const beat = Math.floor(beatAtX(drag.x0, drag.now));
       onSeek(grid.beatTime(beat) - 0.03);
     }

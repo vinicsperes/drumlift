@@ -1,18 +1,17 @@
-// Baquetas do baterista real. A roupa capturou as mãos, mas não as baquetas;
-// elas saem do MIDI: em cada nota a ponta da baqueta está em cima da peça e a
-// baqueta é rígida na mão. Então procuramos o vetor fixo (no espaço da mão)
-// que faz as pontas de todos os golpes numa mesma peça caírem no mesmo ponto,
-// e, junto, qual mão tocou cada nota.
+// The real drummer's sticks. The suit captured the hands, not the sticks, so they come
+// from the MIDI: at each note the stick tip is on the piece and the stick is rigid in
+// the hand. So we look for the fixed vector (in hand space) that makes the tips of all
+// strokes on a piece land on one point, and, along with it, which hand played each note.
 
 const CYMBALS = new Set(["hihat", "ride", "crash"]);
-// x típico (m) de cada peça num kit de destro: decide quem fica com o quê num par
+// typical x (m) of each piece on a right-handed kit: decides who takes what in a pair
 const SIDE = { hihat: -0.47, crash: -0.46, snare: -0.15, tom1: -0.03, tom2: 0.27, floor: 0.52, ride: 0.74 };
-export const HAND_ID = ["RightHand", "LeftHand"]; // 0 = direita, 1 = esquerda
-const LEN = [0.26, 0.44]; // comprimento plausível da mão até a ponta (m)
+export const HAND_ID = ["RightHand", "LeftHand"]; // 0 = right, 1 = left
+const LEN = [0.26, 0.44]; // plausible length from hand to tip (m)
 
 const instOf = (n) => n.inst || n.piece;
 
-// rotação de v pelo quatérnio q = [x, y, z, w] (ou pelo conjugado)
+// rotation of v by quaternion q = [x, y, z, w] (or by its conjugate)
 function rotate(q, o, v, out, inverse = false) {
   const x = q[o], y = q[o + 1], z = q[o + 2], w = q[o + 3];
   const s = inverse ? -1 : 1;
@@ -25,9 +24,9 @@ function rotate(q, o, v, out, inverse = false) {
 }
 
 /**
- * @param S amostras do baterista real (real.js: { fps, n, pos, quat })
- * @param notes notas do song.json ({ t, piece, inst?, vel }); o bumbo fica de fora
- * @returns { d: [vetor da direita, da esquerda] no espaço da mão, strokes, pads, spread }
+ * @param S the real drummer's samples (real.js: { fps, n, pos, quat })
+ * @param notes song.json notes ({ t, piece, inst?, vel }); the kick stays out
+ * @returns { d: [right vector, left vector] in hand space, strokes, pads, spread }
  */
 export function inferSticks(S, notes, { rounds = 5 } = {}) {
   const strokes = notes
@@ -39,8 +38,8 @@ export function inferSticks(S, notes, { rounds = 5 } = {}) {
   const handY = (h, i) => S.pos[HAND_ID[h]][Math.min(S.n - 1, Math.max(0, i)) * 3 + 1];
   const dip = (h, i) => handY(h, i - Math.round(0.1 * S.fps)) - handY(h, i) + handY(h, i + Math.round(0.06 * S.fps)) - handY(h, i);
 
-  // 1) mão de partida: num par, o chimbal e a peça mais à direita ficam com a
-  //    direita; sozinha, a mão que desceu e subiu em volta da nota
+  // 1) starting hand: in a pair, the hi-hat and the rightmost piece go to the right;
+  //    alone, the hand that dropped and rose around the note
   for (let k = 0; k < strokes.length;) {
     let e = k + 1;
     while (e < strokes.length && strokes[e].t - strokes[k].t < 0.025) e++;
@@ -51,14 +50,14 @@ export function inferSticks(S, notes, { rounds = 5 } = {}) {
       a.hand = aRight ? 0 : 1;
       b.hand = aRight ? 1 : 0;
       for (const s of g) s.pair = true;
-      for (const s of g.slice(2)) s.hand = -1; // terceira nota junta: fica de fora
+      for (const s of g.slice(2)) s.hand = -1; // a third simultaneous note stays out
     } else {
       g[0].hand = dip(0, g[0].i) >= dip(1, g[0].i) ? 0 : 1;
     }
     k = e;
   }
 
-  // 2) baqueta inicial: da mão pro nó do indicador, com 36 cm
+  // 2) initial stick: from the hand to the index knuckle, 36 cm long
   const d = [0, 1].map((h) => {
     const acc = [0, 0, 0], tmp = [0, 0, 0], v = [0, 0, 0];
     const hp = S.pos[HAND_ID[h]], fp = S.pos[HAND_ID[h].replace("Hand", "Finger2Proximal")];
@@ -85,7 +84,7 @@ export function inferSticks(S, notes, { rounds = 5 } = {}) {
   const t0 = [0, 0, 0], t1 = [0, 0, 0];
   let pads = {};
   for (let round = 0; round < rounds; round++) {
-    // centros: das pontas de cada mão em cada peça, e o da peça (as duas mãos)
+    // centers: of each hand's tips on each piece, and the piece's (both hands)
     const sum = {}, sumH = [{}, {}];
     for (const s of strokes) {
       if (s.hand < 0) continue;
@@ -98,7 +97,7 @@ export function inferSticks(S, notes, { rounds = 5 } = {}) {
     const mean = (c) => [c[0] / c[3], c[1] / c[3], c[2] / c[3]];
     pads = Object.fromEntries(Object.entries(sum).map(([k, c]) => [k, mean(c)]));
     const padsH = sumH.map((box) => Object.fromEntries(Object.entries(box).map(([k, c]) => [k, mean(c)])));
-    // baqueta: média de R⁻¹ (centro − mão), que minimiza o espalhamento das pontas
+    // stick: mean of R⁻¹ (center - hand), which minimizes the tips' spread
     for (const h of [0, 1]) {
       const acc = [0, 0, 0], v = [0, 0, 0];
       let cnt = 0;
@@ -115,7 +114,7 @@ export function inferSticks(S, notes, { rounds = 5 } = {}) {
       const k = Math.min(LEN[1], Math.max(LEN[0], l)) / (l || 1);
       d[h] = v2.map((x) => x * k);
     }
-    // reatribui as notas sozinhas: a mão cuja ponta está mais perto da peça
+    // reassign lone notes: the hand whose tip is closest to the piece
     for (const s of strokes) {
       if (s.pair || !pads[s.inst]) continue;
       const c = pads[s.inst];
@@ -125,7 +124,7 @@ export function inferSticks(S, notes, { rounds = 5 } = {}) {
     }
   }
 
-  // espalhamento final das pontas em volta de cada peça (cm): mede a inferência
+  // final spread of the tips around each piece (cm): measures the inference
   const spread = {};
   for (const [k, c] of Object.entries(pads)) {
     let s2 = 0, cnt = 0;

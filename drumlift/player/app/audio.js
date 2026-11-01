@@ -1,17 +1,16 @@
-// Motor de áudio: toca as faixas da música (banda sem bateria e bateria isolada)
-// e agenda as notas da tab, num kit sintetizado, e o metrônomo um pouco antes
-// da hora. Tem loop sem emenda e velocidade. O relógio (`time`) é o do que está
-// saindo no alto-falante, contínuo a cada quadro: é por ele que a tab e o
-// baterista 3D andam.
+// Audio engine: plays the song's tracks (band without drums and isolated drums) and
+// schedules the tab's notes, on a synthesized kit, and the metronome a little ahead of
+// time. Has seamless looping and speed control. The clock (`time`) follows what is coming
+// out of the speakers, continuous each frame: the tab and the 3D drummer run on it.
 
 import { lowerBound } from "./util.js";
 
-const LOOKAHEAD = 0.2; // s agendados à frente
+const LOOKAHEAD = 0.2; // s scheduled ahead
 const TRACKS = ["band", "drums"];
 const CHANNELS = ["band", "drums", "tab", "click"];
 const DEFAULT_VOL = { band: 0.85, drums: 1, tab: 1, click: 0.5 };
 
-/** Modos de escuta: o que fica ligado em cada um. */
+/** Listening modes: what is on in each. */
 export const MODES = {
   tab: { band: true, drums: false, tab: true },
   original: { band: true, drums: true, tab: false },
@@ -41,7 +40,7 @@ export function createEngine(song, grid) {
   }
   CHANNELS.forEach(applyGain);
 
-  // ---------- carregamento ----------
+  // ---------- loading ----------
   async function decode(url) {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`${url}: ${res.status}`);
@@ -70,17 +69,17 @@ export function createEngine(song, grid) {
     buffers.clickDown = makeClick(2200);
   }
 
-  // ---------- notas ----------
+  // ---------- notes ----------
   function setNotes(list) {
     notes = list.map((n) => ({ ...n, t: grid.stepTime(n.step) })).sort((a, b) => a.t - b.t);
     beatTimes = song.beats.map((_, k) => grid.beatTime(k));
   }
   setNotes(song.notes);
 
-  // ---------- relógio ----------
-  // ctx.currentTime anda em degraus (no Linux, blocos de ~10 ms) e fica
-  // adiantado pela latência de saída; o par contextTime/performanceTime de
-  // getOutputTimestamp deixa interpolar com o relógio da tela.
+  // ---------- clock ----------
+  // ctx.currentTime moves in steps (on Linux, blocks of ~10 ms) and runs ahead by the
+  // output latency; getOutputTimestamp's contextTime/performanceTime pair lets us
+  // interpolate with the screen clock.
   const heard = { t: 0, at: 0 };
   function heardTime() {
     const now = performance.now();
@@ -88,7 +87,7 @@ export function createEngine(song, grid) {
     let t = ts && ts.performanceTime > 0
       ? ts.contextTime + (now - ts.performanceTime) / 1000
       : ctx.currentTime - (ctx.outputLatency || 0) - (ctx.baseLatency || 0);
-    // a estimativa oscila uns ms: segue a previsão contínua e corrige a deriva aos poucos
+    // the estimate wobbles by a few ms: follow the continuous prediction and fix drift slowly
     const predicted = heard.t + (now - heard.at) / 1000;
     if (heard.at && Math.abs(t - predicted) < 0.03) t = predicted + (t - predicted) * 0.1;
     heard.t = t;
@@ -103,7 +102,7 @@ export function createEngine(song, grid) {
     return seg.song + Math.max(0, now - seg.ctx) * st.rate;
   }
 
-  // ---------- agenda ----------
+  // ---------- schedule ----------
   function startTracks(at, offset) {
     const srcs = [];
     for (const id of TRACKS) {
@@ -173,12 +172,12 @@ export function createEngine(song, grid) {
   }
   function halt() {
     clearInterval(st.timer);
-    for (const seg of st.segs) for (const s of seg.srcs) { try { s.stop(); } catch { /* já parou */ } }
-    for (const v of st.voices.splice(0)) { try { v.stop(); } catch { /* já parou */ } }
+    for (const seg of st.segs) for (const s of seg.srcs) { try { s.stop(); } catch { /* already stopped */ } }
+    for (const v of st.voices.splice(0)) { try { v.stop(); } catch { /* already stopped */ } }
     st.segs = [];
   }
 
-  // ---------- transporte ----------
+  // ---------- transport ----------
   function play(from = st.pausedAt) {
     if (!buffers.band && !buffers.drums) return;
     ctx.resume();
@@ -203,7 +202,7 @@ export function createEngine(song, grid) {
     if (st.playing) play(t); else { st.pausedAt = t; emit(); }
   }
 
-  // ---------- canais e modos ----------
+  // ---------- channels and modes ----------
   function setMode(mode) {
     if (!MODES[mode]) return;
     st.mode = mode;
@@ -225,7 +224,7 @@ export function createEngine(song, grid) {
       if (st.playing) play(t); else emit();
     },
     get loop() { return { on: st.loop, a: Math.min(st.loopA, st.loopB), b: Math.max(st.loopA, st.loopB) }; },
-    /** Liga/desliga o loop dos compassos a..b (inclusive). */
+    /** Turn on or off the loop of bars a..b (inclusive). */
     setLoop(onOff, a = st.loopA, b = st.loopB) {
       st.loop = onOff;
       st.loopA = Math.min(a, b);

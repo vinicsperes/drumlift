@@ -1,4 +1,4 @@
-// Worker que monta a performance (perform.js) fora da página.
+// Worker that builds the performance (perform.js) off the page.
 
 import { prepareSong } from "./timeline.js";
 import { loadMoves } from "./moves.js";

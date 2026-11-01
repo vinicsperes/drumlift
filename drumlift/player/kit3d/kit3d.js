@@ -1,18 +1,18 @@
-// Bateria 3D: um baterista tocando a tab em sincronia com a música.
+// 3D stage: a drummer playing the tab in sync with the song.
 //
 //   import { mountKit3D } from "./kit3d/kit3d.js";
 //   const view = mountKit3D(container, { song, getTime: () => seconds });
-//   view.setSong(song); view.setCamera("baterista" | "frente" | "lado" | "cima");
+// view.setSong(song); view.setCamera("drummer" | "front" | "side" | "top");
 //   view.setMuted(new Set(["hihat"])); view.setAnticipation(true);
 //   view.dispose();
-//   view.setInsets({ top, right, bottom, left }); // px cobertos por painéis por cima
-//   await view.planReady; // performance assada a partir da captura (moves/)
+// view.setInsets({ top, right, bottom, left }); // px covered by panels on top
+// await view.planReady; // baked performance from the capture (moves/)
 //
-// Opções: `transparent` (a página desenha o fundo), `legend: false` (sem a
-// legenda dos membros, quando a página mostra a dela) e `moves: false` (só o
-// modelo procedural, sem os golpes do baterista real).
-// O módulo não toca áudio e não é dono do relógio: chama getTime() a cada quadro
-// e calcula a pose inteira a partir desse tempo.
+// Options: `transparent` (the page draws the background), `legend: false` (no limb
+// legend, when the page shows its own) and `moves: false` (procedural model only,
+// without the real drummer's strokes).
+// The module plays no audio and owns no clock: it calls getTime() each frame and
+// computes the whole pose from that time.
 
 import { PerspectiveCamera, Scene, Vector3, WebGLRenderer } from "../vendor/three.module.min.js";
 import { OrbitControls } from "../vendor/OrbitControls.js";
@@ -23,16 +23,16 @@ import { LIMB_NAMES } from "./theme.js";
 
 const FOV = 42;
 const CAMERA_TWEEN = 0.6; // s
-// Máquina fraca: se o quadro médio passar disso por 2 s, desenha com pixelRatio 1.
+// Weak machine: if the mean frame exceeds this for 2 s, draw at pixelRatio 1.
 const SLOW_FRAME_MS = 25;
 const SLOW_WINDOW_MS = 2000;
-// Golpes de um baterista real (tools/mmip_moves.py); o plano sai num Worker.
+// A real drummer's strokes (tools/mmip_moves.py); the plan is built in a Worker.
 const MOVES_URL = new URL("./moves/mmip.json", import.meta.url).href;
 
 export { CAMERA_NAMES, CAMERA_LABELS } from "./cameras.js";
 
 /**
- * @param {HTMLElement} container elemento com tamanho definido; o canvas ocupa ele todo
+ * @param {HTMLElement} container element with a set size; the canvas fills it
  * @param {{song?: object, getTime: () => number, camera?: string, anticipation?: boolean,
  *          transparent?: boolean, legend?: boolean,
  *          insets?: {top?: number, right?: number, bottom?: number, left?: number}}} opts
@@ -48,9 +48,9 @@ export function mountKit3D(container, opts = {}) {
   try {
     renderer = new WebGLRenderer({ antialias: true, powerPreference: "default", alpha: !!opts.transparent });
   } catch (err) {
-    console.warn("kit3d: WebGL indisponível", err);
+    console.warn("kit3d: WebGL unavailable", err);
     root.style.cssText += "display:flex;align-items:center;justify-content:center;padding:16px;text-align:center;opacity:.7;";
-    root.textContent = "Não deu pra abrir a bateria 3D: o navegador não liberou o WebGL.";
+    root.textContent = "Could not open the 3D stage: the browser did not allow WebGL.";
     const noop = () => {};
     return {
       setSong: noop, setCamera: noop, setMuted: noop, setAnticipation: noop, 
@@ -63,7 +63,7 @@ export function mountKit3D(container, opts = {}) {
   if (transparent) renderer.setClearColor(0x000000, 0);
   const canvas = renderer.domElement;
   canvas.style.cssText = "display:block;width:100%;height:100%;touch-action:none;outline:none;";
-  canvas.setAttribute("aria-label", "Bateria 3D: arraste pra girar, role pra aproximar");
+  canvas.setAttribute("aria-label", "3D stage: drag to rotate, scroll to zoom");
   root.appendChild(canvas);
 
   const scene = new Scene();
@@ -79,7 +79,7 @@ export function mountKit3D(container, opts = {}) {
   controls.maxPolarAngle = Math.PI * 0.53;
   controls.screenSpacePanning = true;
 
-  // ---------- legenda dos membros ----------
+  // ---------- limb legend ----------
   const legend = document.createElement("div");
   legend.style.cssText = "position:absolute;left:8px;top:8px;display:flex;gap:6px;flex-wrap:wrap;" +
     "font:600 11px/1 ui-monospace,Menlo,monospace;user-select:none;";
@@ -96,25 +96,25 @@ export function mountKit3D(container, opts = {}) {
   }
   if (opts.legend !== false) root.appendChild(legend);
 
-  // ---------- estado ----------
+  // ---------- state ----------
   let prep = prepareSong(opts.song);
   let plan = null, planId = 0, planWorker = null, planDone = null;
   const useMoves = opts.moves !== false;
   let anticipation = !!opts.anticipation;
   let muted = new Set();
-  let camName = CAMERA_NAMES.includes(opts.camera) ? opts.camera : "frente";
+  let camName = CAMERA_NAMES.includes(opts.camera) ? opts.camera : "front";
   let userMoved = false;
   let tween = null;
   let dirty = true;
   let lastT = NaN;
   let width = 0, height = 0;
-  // área livre do canvas (sem os painéis da página por cima), em px
+  // free area of the canvas (without the page's panels on top), in px
   const insets = { top: 0, right: 0, bottom: 0, left: 0 };
   Object.assign(insets, opts.insets || {});
   let raf = 0;
   let disposed = false;
 
-  // ---------- tema ----------
+  // ---------- theme ----------
   const mq = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
   function applyTheme() {
     const th = style.paint(mq ? mq.matches : true);
@@ -130,10 +130,10 @@ export function mountKit3D(container, opts = {}) {
   mq?.addEventListener?.("change", applyTheme);
   applyTheme();
 
-  // ---------- câmera ----------
+  // ---------- camera ----------
   const tmpPos = new Vector3(), tmpTarget = new Vector3();
-  // A câmera enquadra a área livre: o eixo ótico vai pro centro dela
-  // (setViewOffset) e a distância é a que faz o kit caber nela.
+  // The camera frames the free area: the optical axis goes to its center
+  // (setViewOffset) and the distance is what makes the kit fit.
   function freeRect() {
     const fw = Math.max(80, width - insets.left - insets.right);
     const fh = Math.max(80, height - insets.top - insets.bottom);
@@ -180,7 +180,7 @@ export function mountKit3D(container, opts = {}) {
   controls.addEventListener("start", onStart);
   controls.addEventListener("change", onChange);
 
-  // ---------- tamanho ----------
+  // ---------- size ----------
   function resize(w, h) {
     width = Math.floor(w);
     height = Math.floor(h);
@@ -198,9 +198,9 @@ export function mountKit3D(container, opts = {}) {
   ro.observe(root);
   resize(root.clientWidth, root.clientHeight);
 
-  // ---------- desempenho ----------
-  // Mede o intervalo entre quadros desenhados seguidos; quadros parados (nada
-  // mudou), abas em segundo plano e engasgos de mais de 1 s não contam.
+  // ---------- performance ----------
+  // Measures the interval between consecutive drawn frames; still frames (nothing
+  // changed), background tabs and stalls over 1 s don't count.
   const perf = { last: 0, sum: 0, n: 0 };
   function watchPerf(rendered) {
     const now = performance.now();
@@ -220,7 +220,7 @@ export function mountKit3D(container, opts = {}) {
     perf.n = 0;
   }
 
-  // ---------- quadro ----------
+  // ---------- frame ----------
   function readTime() {
     let t;
     try { t = Number(getTime()); } catch { t = NaN; }
@@ -242,9 +242,9 @@ export function mountKit3D(container, opts = {}) {
   }
   raf = requestAnimationFrame(frame);
 
-  // ---------- performance assada ----------
-  // A cada música (ou edição), um Worker escolhe pra cada golpe o recorte real
-  // mais parecido; enquanto isso, e se algo falhar, vale o modelo procedural.
+  // ---------- baked performance ----------
+  // For each song (or edit), a Worker picks the closest real segment for each stroke;
+  // until then, or if something fails, the procedural model applies.
   let planReady = Promise.resolve(null);
   function requestPlan(song) {
     const id = ++planId;
@@ -254,8 +254,8 @@ export function mountKit3D(container, opts = {}) {
       planReady = Promise.resolve(null);
       return;
     }
-    // o plano anterior continua valendo até o novo chegar (editar a tab não
-    // faz o baterista voltar pro modelo procedural por um instante)
+    // the previous plan holds until the new one arrives (editing the tab doesn't send
+    // the drummer back to the procedural model for a moment)
     planReady = new Promise((resolve) => { planDone = resolve; });
     const msg = { id, song: { notes: song.notes, beats: song.beats, tempo: song.tempo, duration: song.duration }, url: MOVES_URL };
     try {
@@ -267,7 +267,7 @@ export function mountKit3D(container, opts = {}) {
       buildHere(msg);
     }
   }
-  /** Sem Worker: monta aqui mesmo, depois de devolver o controle à página. */
+  /** No Worker: build it here, after yielding to the page. */
   function buildHere(msg) {
     setTimeout(async () => {
       try {
@@ -281,14 +281,14 @@ export function mountKit3D(container, opts = {}) {
   }
   function applyPlan({ id, plan: p, error }) {
     if (id !== planId || disposed) return;
-    if (error) console.warn("kit3d: performance procedural (", error, ")");
+    if (error) console.warn("kit3d: procedural performance (", error, ")");
     plan = p || null;
     style.rig.setPlan(plan);
     dirty = true;
     planDone?.(plan);
   }
 
-  // Compatível com o _debug.avatar de antes: esqueleto + ponta da baqueta.
+  // Compatible with the old _debug.avatar: skeleton + stick tip.
   const avatarView = () => ({
     ...style.avatar, configs: style.rig.configs, arms: style.rig.arms, legs: style.rig.legs,
     TIP_R: style.rig.TIP_R, tipWorld: style.tipWorld,
@@ -297,7 +297,7 @@ export function mountKit3D(container, opts = {}) {
   // ---------- API ----------
   const view = {
     setSong(song) { prep = prepareSong(song); requestPlan(song); dirty = true; },
-    /** Promessa da performance assada da música atual (null = procedural). */
+    /** Promise of the current song's baked performance (null = procedural). */
     get planReady() { return planReady; },
     setCamera(name) {
       if (!CAMERA_NAMES.includes(name)) return;
@@ -307,8 +307,7 @@ export function mountKit3D(container, opts = {}) {
     },
     setMuted(pieces) { muted = new Set(pieces || []); style.setMuted(muted); dirty = true; },
     setAnticipation(on) { anticipation = !!on; dirty = true; },
-    /** Paleta do gato ("laranja" | "cinza" | "frajola"); por enquanto só na página de desenvolvimento. */
-    /** Pedaços do canvas cobertos por painéis da página (px): o baterista centraliza no resto. */
+    /** Parts of the canvas covered by the page's panels (px): the drummer centers in the rest. */
     setInsets(next) {
       Object.assign(insets, next || {});
       applyViewOffset();
@@ -331,7 +330,7 @@ export function mountKit3D(container, opts = {}) {
       renderer.forceContextLoss();
       root.remove();
     },
-    // Ganchos pra testes; não fazem parte do contrato.
+    // Test hooks; not part of the contract.
     _debug: {
       get prep() { return prep; },
       get plan() { return plan; },
@@ -339,14 +338,14 @@ export function mountKit3D(container, opts = {}) {
       get avatar() { return avatarView(); },
       get rig() { return style.rig; },
       get styleObj() { return style; },
-      /** A câmera ainda está indo pra posição pronta? */
+      /** Is the camera still moving to its preset? */
       get tweening() { return !!tween; },
       renderer, camera, controls, scene,
-      /** Calcula a pose no tempo t (sem desenhar). O próximo quadro volta pro getTime(). */
+      /** Compute the pose at time t (no drawing). The next frame returns to getTime(). */
       pose(t) { pose(t); dirty = true; },
       /**
-       * Ponta da baqueta em relação ao ponto de contato da peça, no tempo t:
-       * gap = altura (m) acima da superfície; off = distância (m) até o ponto alvo.
+       * Stick tip relative to the piece's contact point, at time t:
+       * gap = height (m) above the surface; off = distance (m) to the target point.
        */
       tip(limb, inst, t) {
         pose(t);
@@ -356,11 +355,11 @@ export function mountKit3D(container, opts = {}) {
         const off = tip.distanceTo(c.tip);
         return { gap: tip.sub(c.P).dot(c.n) - style.rig.TIP_R, off };
       },
-      /** Distância (m) do batedor até a pele do bumbo, no tempo t. */
+      /** Distance (m) from the beater to the kick head, at time t. */
       beaterGap(t) { pose(t); dirty = true; return style.beaterGap(); },
-      /** Quanto a superfície da peça está fora do lugar no tempo t (estilo pelúcia; 0 no manequim). */
+      /** How far the piece's surface is out of place at time t. */
       deform(id, t) { pose(t); dirty = true; return style.kit.deform ? style.kit.deform(id) : 0; },
-      /** IK alcançou os alvos no tempo t? */
+      /** Did the IK reach its targets at time t? */
       reached(t) {
         pose(t);
         dirty = true;
@@ -369,7 +368,7 @@ export function mountKit3D(container, opts = {}) {
       },
       info() { return { ...renderer.info.render }; },
       memory() { return { ...renderer.info.memory }; },
-      /** Desenha um quadro agora (pra medir draw calls e memória). */
+      /** Draw a frame now (to measure draw calls and memory). */
       render() { pose(readTime()); renderer.render(scene, camera); return { ...renderer.info.render }; },
     },
   };

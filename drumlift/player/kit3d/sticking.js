@@ -1,23 +1,23 @@
-// Quem toca o quê. Regras pra destro, pensadas pros grooves comuns:
-//   PD = bumbo; PE fica parado no pedal do chimbal (não inventa notas).
-//   Mesmo passo: prato + caixa/tom -> MD no prato; caixa + tom -> ME na caixa.
-//   Sozinhas: prato -> MD (ME se a MD não tiver tempo, menos no ride); caixa ->
-//   ME, alternando D-E-D-E em sequências rápidas; tons alternam dentro da virada.
+// Who plays what. Right-handed rules, written for common grooves:
+//   PD = kick; PE stays on the hi-hat pedal (it doesn't invent notes).
+//   Same step: cymbal + snare/tom -> MD on the cymbal; snare + tom -> ME on the snare.
+//   Alone: cymbal -> MD (ME if MD has no time, except on the ride); snare -> ME,
+//   alternating R-L-R-L in fast runs; toms alternate within a fill.
 
 const CYMBALS = new Set(["crash", "ride", "hihat"]);
 const DRUMS = new Set(["snare", "tom"]);
 const PRIORITY = { crash: 0, ride: 1, hihat: 2, snare: 3, tom: 4 };
 
-export const FAST_CYMBAL = 0.09; // s: a MD não repete prato mais rápido que isso
-export const FAST_DRUM = 0.18;   // s: abaixo disso a caixa alterna as mãos
+export const FAST_CYMBAL = 0.09; // s: MD doesn't repeat a cymbal faster than this
+export const FAST_DRUM = 0.18;   // s: below this the snare alternates hands
 
 const other = (limb) => (limb === "MD" ? "ME" : "MD");
-// Em andamento lento a semicolcheia passa de FAST_DRUM, mas virada em
-// semicolcheias é D-E-D-E em qualquer andamento.
+// At slow tempos a sixteenth exceeds FAST_DRUM, but a sixteenth-note fill is R-L-R-L
+// at any tempo.
 const fastDrum = (clock, t) => Math.max(FAST_DRUM, (clock.beatLen(t) / 4) * 1.1);
 
-// Com 3 ou mais notas de mão: o prato mais importante e o tambor mais
-// importante (se houver); senão, as duas primeiras na ordem prato > caixa > tom.
+// With 3 or more hand notes: the most important cymbal and the most important drum
+// (if any); otherwise, the first two in the order cymbal > snare > tom.
 function pickTwo(hand) {
   const cym = hand.filter((n) => CYMBALS.has(n.piece));
   const drum = hand.filter((n) => DRUMS.has(n.piece));
@@ -25,27 +25,27 @@ function pickTwo(hand) {
 }
 
 function assignPair(a, b) {
-  // a vem antes na ordem de importância
+  // a comes first in order of importance
   const ca = CYMBALS.has(a.piece), cb = CYMBALS.has(b.piece);
   if (ca && b.inst === "floor" && a.piece !== "ride") {
-    // Prato da esquerda + surdo: cruzar os dois braços não dá; cada mão no seu lado.
+    // Left cymbal + floor tom: crossing both arms won't work; each hand on its side.
     a.limb = "ME"; b.limb = "MD";
   } else if (ca && cb) {
-    // Dois pratos: a MD fica com o ride (à direita); senão com o de maior prioridade.
+    // Two cymbals: MD takes the ride (on the right); otherwise the higher priority one.
     const right = b.piece === "ride" ? b : a;
     right.limb = "MD";
     (right === a ? b : a).limb = "ME";
   } else if (ca) {
-    a.limb = "MD"; b.limb = "ME";      // prato + caixa/tom: mão cruzada de destro
+    a.limb = "MD"; b.limb = "ME";      // cymbal + snare/tom: right-handed cross
   } else {
-    a.limb = "ME"; b.limb = "MD";      // caixa + tom: ME na caixa, MD no tom
+    a.limb = "ME"; b.limb = "MD";      // snare + tom: ME on the snare, MD on the tom
   }
 }
 
 function assignSingle(g, prev, next, last, clock) {
   const n = g.single;
   if (CYMBALS.has(n.piece)) {
-    // O ride fica longe demais da ME: a MD faz o golpe duplo mesmo sem folga.
+    // The ride is too far from ME: MD plays the double stroke even with no room.
     n.limb = n.t - last.MD < FAST_CYMBAL && n.piece !== "ride" ? "ME" : "MD";
     return;
   }
@@ -53,29 +53,29 @@ function assignSingle(g, prev, next, last, clock) {
   const prevDrum = prev?.single && DRUMS.has(prev.single.piece) ? prev.single : null;
   if (prevDrum) {
     const gap = n.t - prevDrum.t;
-    // Continua alternando: sequência rápida, ou tom dentro da virada (até 1 tempo).
+    // Keep alternating: a fast run, or a tom within a fill (up to 1 beat).
     if (gap < fast || (n.piece === "tom" && gap <= clock.beatLen(prevDrum.t) * 1.05)) {
       n.limb = other(prevDrum.limb);
       return;
     }
   }
   if (n.piece === "tom") {
-    // Começo de virada: a mão que está livre há mais tempo (empate -> MD).
+    // Start of a fill: the hand that has been free longest (tie -> MD).
     n.limb = last.ME < last.MD ? "ME" : "MD";
     return;
   }
-  // Caixa abrindo uma sequência rápida: começa com a direita (D-E-D-E).
+  // Snare opening a fast run: start with the right (R-L-R-L).
   const nextDrum = next?.single && DRUMS.has(next.single.piece) ? next.single : null;
   if (nextDrum && nextDrum.t - n.t < fast && n.t - last.MD >= FAST_CYMBAL) {
     n.limb = "MD";
     return;
   }
-  // Caixa sozinha: ME, a não ser que a ME tenha acabado de tocar e a MD esteja
-  // livre. Com as duas ocupadas a ME faz o golpe duplo e a MD segue no prato.
+  // Snare alone: ME, unless ME just played and MD is free. With both busy, ME plays
+  // the double stroke and MD stays on the cymbal.
   n.limb = n.t - last.ME < fast && n.t - last.MD >= fast ? "MD" : "ME";
 }
 
-/** Marca `limb` em cada nota dos grupos (null = nenhum membro toca). */
+/** Set `limb` on each note of the groups (null = no limb plays). */
 export function assignSticking(groups, clock) {
   const handGroups = [];
   for (const g of groups) {

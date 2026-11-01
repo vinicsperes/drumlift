@@ -1,6 +1,5 @@
-/* drumlift — player.
-   O palco 3D ocupa a tela toda; por cima ficam o título, os ajustes, a
-   leitura do compasso e a doca com a faixa de notas e o transporte. */
+/* drumlift player. The 3D stage fills the screen; on top sit the title, the settings,
+   the bar readout and the dock with the note lane and the transport. */
 
 :root {
   --paper: #0a0a0f;
@@ -49,7 +48,7 @@ button, select, input { font: inherit; color: inherit; }
   color: var(--muted);
 }
 
-/* ---------- título ---------- */
+/* ---------- title ---------- */
 .masthead {
   position: fixed;
   top: 24px;
@@ -75,7 +74,7 @@ h1 {
 .artist { margin: 6px 0 0; font: 400 13px/1.2 var(--mono); color: var(--ink-2); }
 .meta { margin: 12px 0 0; font: 500 11px/1.4 var(--mono); letter-spacing: 0.04em; color: var(--muted); }
 
-/* ---------- ajustes ---------- */
+/* ---------- settings ---------- */
 .panel {
   position: fixed;
   top: 18px;
@@ -113,7 +112,7 @@ h1 {
 .files a { color: var(--muted); text-decoration: none; border-bottom: 1px solid var(--hair-2); }
 .files a:hover { color: var(--ink); }
 
-/* controles */
+/* controls */
 .seg {
   display: flex;
   gap: 2px;
@@ -177,7 +176,7 @@ details.mixer summary::before { content: "›"; display: inline-block; width: 12
 details.mixer[open] summary::before { transform: rotate(90deg); }
 details.mixer summary::-webkit-details-marker { display: none; }
 
-/* ---------- leitura (canto de baixo) ---------- */
+/* ---------- readout (bottom corner) ---------- */
 .readout {
   position: fixed;
   left: 30px;
@@ -196,7 +195,7 @@ details.mixer summary::-webkit-details-marker { display: none; }
 .limbs i[data-limb="MD"] { background: var(--c-md); }
 .limbs i[data-limb="ME"] { background: var(--c-me); }
 
-/* ---------- doca: faixa de notas + transporte ---------- */
+/* ---------- dock: note lane + transport ---------- */
 .dock {
   position: fixed;
   left: 12px; right: 12px; bottom: 12px;
@@ -261,7 +260,7 @@ body.playing .play .i-pause { display: block; }
 .ab { flex: none; width: 150px; }
 .break { display: none; }
 
-/* ---------- tab completa ---------- */
+/* ---------- full tab ---------- */
 .sheet {
   position: fixed;
   top: 16vh; left: 12px; right: 12px; bottom: 12px;
@@ -308,7 +307,7 @@ body.playing .play .i-pause { display: block; }
 .p-crash { --pc: var(--c-crash); } .p-ride { --pc: var(--c-ride); } .p-hihat { --pc: var(--c-hihat); }
 .p-snare { --pc: var(--c-snare); } .p-tom { --pc: var(--c-tom); } .p-kick { --pc: var(--c-kick); }
 
-/* ---------- carregando, aviso ---------- */
+/* ---------- loading, toast ---------- */
 .loading {
   position: fixed; left: 50%; top: 42%;
   z-index: 6;
@@ -331,7 +330,7 @@ body.playing .play .i-pause { display: block; }
 }
 #toast.show { opacity: 1; }
 
-/* ---------- telas menores ---------- */
+/* ---------- smaller screens ---------- */
 @media (max-width: 1000px) {
   .readout { display: none; }
 }

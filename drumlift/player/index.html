@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -8,43 +8,43 @@
 <link rel="stylesheet" href="app/style.css">
 </head>
 <body>
-<div id="stage" aria-label="Baterista 3D tocando a tab"></div>
+<div id="stage" aria-label="3D drummer playing the tab"></div>
 
 <header class="masthead">
-  <p class="eyebrow">drumlift <span>· estudo de bateria</span></p>
+  <p class="eyebrow">drumlift <span>· drum practice</span></p>
   <h1 id="title">&nbsp;</h1>
   <p class="artist" id="artist"></p>
   <p class="meta" id="meta"></p>
 </header>
 
-<aside class="panel" id="panel" aria-label="Ajustes">
+<aside class="panel" id="panel" aria-label="Settings">
   <button class="panel-head" id="panel-toggle" aria-expanded="true" aria-controls="panel-body">
-    <span class="label">Ajustes</span>
+    <span class="label">Settings</span>
     <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" /></svg>
   </button>
   <div class="panel-body" id="panel-body">
     <section>
-      <h2 class="label">Velocidade <output id="rate-out">100%</output></h2>
-      <input type="range" id="rate" min="50" max="100" step="5" value="100" aria-label="Velocidade">
+      <h2 class="label">Speed <output id="rate-out">100%</output></h2>
+      <input type="range" id="rate" min="50" max="100" step="5" value="100" aria-label="Speed">
       <div class="ticks"><span>50</span><span>75</span><span>100</span></div>
     </section>
     <section>
-      <h2 class="label">Câmera</h2>
-      <div class="seg" id="cams" role="group" aria-label="Câmera"></div>
+      <h2 class="label">Camera</h2>
+      <div class="seg" id="cams" role="group" aria-label="Camera"></div>
     </section>
     <section>
-      <label class="check"><input type="checkbox" id="anticipation"><span>Antecipação</span></label>
+      <label class="check"><input type="checkbox" id="anticipation"><span>Anticipation</span></label>
     </section>
     <section>
-      <h2 class="label">Som</h2>
-      <label class="row">Kit da tab <select id="kit"></select></label>
-      <label class="check"><input type="checkbox" id="metronome"><span>Metrônomo</span></label>
+      <h2 class="label">Sound</h2>
+      <label class="row">Tab kit <select id="kit"></select></label>
+      <label class="check"><input type="checkbox" id="metronome"><span>Metronome</span></label>
       <details class="mixer">
         <summary>Volumes</summary>
-        <label class="row">Banda <input type="range" min="0" max="1.5" step="0.01" data-vol="band"></label>
-        <label class="row">Bateria original <input type="range" min="0" max="1.5" step="0.01" data-vol="drums"></label>
+        <label class="row">Band <input type="range" min="0" max="1.5" step="0.01" data-vol="band"></label>
+        <label class="row">Original drums <input type="range" min="0" max="1.5" step="0.01" data-vol="drums"></label>
         <label class="row">Tab <input type="range" min="0" max="1.5" step="0.01" data-vol="tab"></label>
-        <label class="row">Metrônomo <input type="range" min="0" max="1.5" step="0.01" data-vol="click"></label>
+        <label class="row">Metronome <input type="range" min="0" max="1.5" step="0.01" data-vol="click"></label>
       </details>
     </section>
     <section class="files">
@@ -55,24 +55,24 @@
 </aside>
 
 <div class="readout" id="readout">
-  <div><span class="label">Compasso</span><b id="ro-bar">–</b><small id="ro-bars"></small></div>
-  <div><span class="label">Tempo</span><b id="ro-beat">–</b></div>
-  <div><span class="label">Andamento</span><b id="ro-bpm">–</b><small>bpm</small></div>
-  <ul class="limbs" aria-label="Legenda dos membros">
-    <li><i data-limb="MD"></i>D · mão direita</li>
-    <li><i data-limb="ME"></i>E · mão esquerda</li>
+  <div><span class="label">Bar</span><b id="ro-bar">–</b><small id="ro-bars"></small></div>
+  <div><span class="label">Beat</span><b id="ro-beat">–</b></div>
+  <div><span class="label">Tempo</span><b id="ro-bpm">–</b><small>bpm</small></div>
+  <ul class="limbs" aria-label="Limb legend">
+    <li><i data-limb="MD"></i>R · right hand</li>
+    <li><i data-limb="ME"></i>L · left hand</li>
   </ul>
 </div>
 
 <footer class="dock" id="dock">
-  <canvas id="lane" aria-label="Próximas notas: arraste pra marcar um loop, clique pra pular"></canvas>
+  <canvas id="lane" aria-label="Upcoming notes: drag to mark a loop, click to jump"></canvas>
   <div class="transport">
-    <button class="play" id="play" disabled aria-label="Tocar (espaço)">
+    <button class="play" id="play" disabled aria-label="Play (space)">
       <svg viewBox="0 0 24 24" class="i-play" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z" /></svg>
       <svg viewBox="0 0 24 24" class="i-pause" aria-hidden="true"><path d="M7 5h3.6v14H7zM13.4 5H17v14h-3.6z" /></svg>
     </button>
     <span class="time" id="time">0:00</span>
-    <div class="scrub" id="scrub" role="slider" tabindex="0" aria-label="Posição na música">
+    <div class="scrub" id="scrub" role="slider" tabindex="0" aria-label="Position in the song">
       <div class="scrub-loop" id="scrub-loop"></div>
       <div class="scrub-fill" id="scrub-fill"></div>
       <div class="scrub-knob" id="scrub-knob"></div>
@@ -80,29 +80,29 @@
     </div>
     <span class="time dur" id="dur">0:00</span>
     <span class="break" aria-hidden="true"></span>
-    <button class="pill" id="loop" title="Repetir trecho (L). Arraste na faixa de notas pra escolher.">
+    <button class="pill" id="loop" title="Repeat a section (L). Drag on the note lane to pick it.">
       <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 6.5A3.5 3.5 0 0 1 6.5 3h4l-1.5-1.5M13 9.5A3.5 3.5 0 0 1 9.5 13h-4L7 14.5" /></svg>
       <span id="loop-label">Loop</span>
     </button>
-    <div class="seg ab" id="ab" role="group" aria-label="O que ouvir (A)">
-      <button data-mode="tab" title="Banda + a tab tocando">Tab</button>
-      <button data-mode="original" title="Banda + a bateria de verdade">Original</button>
+    <div class="seg ab" id="ab" role="group" aria-label="What to hear (A)">
+      <button data-mode="tab" title="Band + the tab">Tab</button>
+      <button data-mode="original" title="Band + the real drums">Original</button>
     </div>
-    <button class="pill" id="sheet-btn" title="Tab completa e edição (T)">
+    <button class="pill" id="sheet-btn" title="Full tab and editing (T)">
       <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4h11M2.5 8h11M2.5 12h11" /></svg>
-      <span>Tab completa</span>
+      <span>Full tab</span>
     </button>
   </div>
 </footer>
 
-<section class="sheet" id="sheet" hidden aria-label="Tab completa">
+<section class="sheet" id="sheet" hidden aria-label="Full tab">
   <header class="sheet-head">
-    <h2>Tab completa</h2>
+    <h2>Full tab</h2>
     <div class="sheet-actions">
-      <button class="pill" data-act="edit" title="Corrigir notas (E)">Editar</button>
-      <button class="pill" data-act="undo" title="Desfazer (Ctrl+Z)" disabled>Desfazer</button>
-      <button class="pill strong" data-act="save" title="Salvar (Ctrl+S)" disabled>Salvar</button>
-      <button class="icon" data-act="close" aria-label="Fechar (Esc)">
+      <button class="pill" data-act="edit" title="Fix notes (E)">Edit</button>
+      <button class="pill" data-act="undo" title="Undo (Ctrl+Z)" disabled>Undo</button>
+      <button class="pill strong" data-act="save" title="Save (Ctrl+S)" disabled>Save</button>
+      <button class="icon" data-act="close" aria-label="Close (Esc)">
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
       </button>
     </div>
@@ -111,7 +111,7 @@
 </section>
 
 <div class="loading" id="loading">
-  <p class="label">Carregando a música</p>
+  <p class="label">Loading the song</p>
   <div class="bar"><i id="loading-bar"></i></div>
 </div>
 <div id="toast" role="status"></div>

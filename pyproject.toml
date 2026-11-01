@@ -1,7 +1,7 @@
 [project]
 name = "drumlift"
 version = "0.1.0"
-description = "Isola a bateria de uma música, gera tablatura e toca a tab de volta para validar de ouvido."
+description = "Isolate the drums of a song, generate a tab and play it back to check by ear."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]

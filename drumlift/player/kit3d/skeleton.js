@@ -1,20 +1,18 @@
-// Esqueleto humano do baterista: pelve, coluna em três partes, pescoço,
-// cabeça, clavículas, braço, antebraço com torção, mão com cinco dedos
-// segurando a baqueta e pernas com tornozelo e dedos do pé.
+// The drummer's human skeleton: pelvis, a three-part spine, neck, head, clavicles, arm,
+// forearm with twist, a five-fingered hand holding the stick, and legs with ankle and toes.
 //
-// Quem decide a pose é um "comando" por quadro (createDrive): rotações da
-// pelve, da coluna e da cabeça, clavículas, onde está cada baqueta (fulcro e
-// orientação), quanto cada cotovelo abre e como cada pé está no pedal. O
-// esqueleto resolve o resto: a mão sai da baqueta (pegada fixa), o cotovelo
-// do IK de dois ossos com o giro pedido, a torção do antebraço da diferença
-// entre mão e antebraço, os dedos da pegada e as pernas do IK até os pedais.
-// Como a mão vem da baqueta, a ponta da baqueta fica exatamente onde o
-// comando mandou, qualquer que seja o braço.
+// A per-frame "drive" (createDrive) decides the pose: rotations of the pelvis, spine and
+// head, clavicles, where each stick is (fulcrum and orientation), how far each elbow opens
+// and how each foot sits on its pedal. The skeleton solves the rest: the hand comes from
+// the stick (fixed grip), the elbow from a two-bone IK with the requested turn, the forearm
+// twist from the difference between hand and forearm, the fingers from the grip, and the
+// legs from IK to the pedals. Since the hand comes from the stick, the tip lands exactly
+// where the drive said, whatever the arm does.
 //
-// Convenções (as mesmas da captura MMIP, pra transferir movimento direto):
-// mundo com y pra cima e o baterista olhando pra -Z (direita = +X); cada
-// osso tem origem na junta, y ao longo do osso; na mão, y vai do pulso pros
-// dedos, z sai pelo dorso e x = y × z (ulnar na direita, radial na esquerda).
+// Conventions (the same as the MMIP capture, to transfer motion directly): world with y
+// up and the drummer facing -Z (right = +X); each bone has its origin at the joint, y along
+// the bone; on the hand, y goes from wrist to fingers, z out of the back and x = y × z
+// (ulnar on the right, radial on the left).
 
 import { Euler, Matrix4, Quaternion, Vector3 } from "../vendor/three.module.min.js";
 import { solveTwoBone } from "./ik.js";
@@ -36,43 +34,43 @@ export const BONE = Object.fromEntries(BONES.map((n, i) => [n, i]));
 
 const v3 = (a) => new Vector3(a[0], a[1], a[2]);
 
-// Medidas (m). Offsets da coluna e da cabeça no espaço do osso de cima; os
-// de lado (x) são da direita e espelham na esquerda.
+// Measures (m). Spine and head offsets in the space of the bone above; side offsets (x)
+// are for the right and mirror on the left.
 export const SKEL = {
-  hips: [0, 0.58, 0.26],           // centro da pelve, no banco (mundo)
-  spine: [0, 0.095, -0.005],       // pelve -> lombar
-  spine1: [0, 0.125, 0],           // lombar -> torácica
-  chest: [0, 0.13, 0],             // -> peito
-  neck: [0, 0.19, 0.012],          // peito -> base do pescoço
-  head: [0, 0.095, -0.012],        // pescoço -> base do crânio
-  headTop: 0.2,                    // base do crânio -> topo da cabeça
-  sc: [0.022, 0.135, -0.045],      // peito -> junta esterno-clavicular
-  shoulder: [0.168, 0.012, 0.03],  // esterno-clavicular -> ombro
+  hips: [0, 0.58, 0.26],           // center of the pelvis, on the throne (world)
+  spine: [0, 0.095, -0.005],       // pelvis -> lumbar
+  spine1: [0, 0.125, 0],           // lumbar -> thoracic
+  chest: [0, 0.13, 0],             // -> chest
+  neck: [0, 0.19, 0.012],          // chest -> base of the neck
+  head: [0, 0.095, -0.012],        // neck -> base of the skull
+  headTop: 0.2,                    // base of the skull -> top of the head
+  sc: [0.022, 0.135, -0.045],      // chest -> sternoclavicular joint
+  shoulder: [0.168, 0.012, 0.03],  // sternoclavicular joint -> shoulder
   upperArm: 0.285,
   foreArm: 0.255,
-  hip: [0.095, -0.045, -0.01],     // pelve -> quadril
+  hip: [0.095, -0.045, -0.01],     // pelvis -> hip
   thigh: 0.42,
   shin: 0.42,
-  // pé, no plano da sola (origem no calcanhar, -z pra frente)
+  // foot, in the plane of the sole (origin at the heel, -z forward)
   ankle: [0, 0.075, -0.05],
   ball: [0, 0.022, -0.165],
   toeTip: [0, 0.016, -0.235],
   footWidth: 0.09,
-  // baqueta: do fulcro (entre o polegar e o indicador) até o centro da bolinha, e até o cabo
+  // stick: from the fulcrum (between thumb and index) to the ball's center, and to the butt
   stickFront: 0.28,
   stickBack: 0.13,
 };
 
-// Pegada: fulcro e direção da baqueta no espaço da mão (direita; x espelha na
-// esquerda). A baqueta atravessa a palma um pouco na diagonal, do pé da mão
-// até sair entre o polegar e o indicador, encostada na palma. A direção é um
-// meio-termo entre a anatomia e o que a captura indica (a nuvem de pontas das
-// baquetas fica mais junta com a baqueta quase no eixo da mão).
+// Grip: stick fulcrum and direction in hand space (right; x mirrors on the left). The
+// stick crosses the palm slightly diagonally, from the heel of the hand to between thumb
+// and index, against the palm. The direction splits the difference between anatomy and
+// what the capture shows (the cloud of stick tips tightens with the stick nearly on the
+// hand's axis).
 export const GRIP = { fulcrum: [-0.024, 0.088, -0.03], dir: [-0.3, 0.95, 0] };
 
-// Dedos (direita, cm no espaço da mão): base, comprimento das 3 falanges e
-// flexão de cada junta na pegada (graus). O polegar sai do pé do polegar e
-// encosta a ponta na baqueta, em cima do fulcro.
+// Fingers (right, cm in hand space): base, length of the 3 phalanges and flexion of each
+// joint in the grip (degrees). The thumb leaves from its base and touches the stick above
+// the fulcrum.
 const FINGER_DEF = {
   thumb: { base: [-2.8, 2.2, -1.2], dir: [-0.3, 0.93, -0.2], len: [4.0, 3.1, 2.6], flex: [6, 12, 14], spread: 0 },
   index: { base: [-3.2, 7.9, -0.2], dir: [-0.08, 1, 0], len: [4.5, 2.8, 2.1], flex: [25, 75, 22], spread: -3 },
@@ -86,25 +84,25 @@ const deg = (d) => (d * Math.PI) / 180;
 const X = new Vector3(1, 0, 0), Y = new Vector3(0, 1, 0), Z = new Vector3(0, 0, 1);
 const DOWN = new Vector3(0, -1, 0);
 const side = (l) => (l === "MD" || l === "PD" ? 1 : -1);
-// Mão em relação ao antebraço com o polegar pra cima (torção zero), em volta do y.
+// Hand relative to the forearm with the thumb up (zero twist), around y.
 const TWIST0 = Math.PI / 2;
-const STRETCH = 1.025; // quanto o braço pode esticar além do comprimento (invisível)
+const STRETCH = 1.025; // how far the arm may stretch past its length (invisible)
 const mirror = (a, s) => [a[0] * s, a[1], a[2]];
 
-/** Comando de pose (o que o "baterista" decide a cada quadro). */
+/** Pose drive (what the "drummer" decides each frame). */
 export function createDrive() {
   const hand = () => ({ pos: new Vector3(), quat: new Quaternion() });
   return {
     hips: { pos: v3(SKEL.hips), rot: new Euler(0, 0, 0, "YXZ") },
-    spine: SPINE.map(() => new Euler(0, 0, 0, "YXZ")),  // rotação local de cada vértebra
+    spine: SPINE.map(() => new Euler(0, 0, 0, "YXZ")),  // local rotation of each vertebra
     neck: new Euler(0, 0, 0, "YXZ"),
     head: new Euler(0, 0, 0, "YXZ"),
-    clav: { MD: { elev: 0, prot: 0 }, ME: { elev: 0, prot: 0 } }, // rad: sobe e vai pra frente
-    stick: { MD: hand(), ME: hand() },                  // fulcro e orientação da baqueta
-    swivel: { MD: 0.45, ME: 0.2 },                      // rad: cotovelo pra fora (+) a partir de "pendurado"
-    grip: { MD: 0, ME: 0 },                             // 0..1: quanto os dedos apertam
-    // pé no pedal: frame da prancha (origem no eixo, y = normal, -z = pra ponta),
-    // onde fica o calcanhar na prancha e quanto ele está levantado (rad, gira na planta)
+    clav: { MD: { elev: 0, prot: 0 }, ME: { elev: 0, prot: 0 } }, // rad: rises and goes forward
+    stick: { MD: hand(), ME: hand() },                  // stick fulcrum and orientation
+    swivel: { MD: 0.45, ME: 0.2 },                      // rad: elbow outward (+) from "hanging"
+    grip: { MD: 0, ME: 0 },                             // 0..1: how much the fingers squeeze
+    // foot on the pedal: board frame (origin on the axis, y = normal, -z toward the toe),
+    // where the heel sits on the board and how far it is lifted (rad, turning at the ball)
     foot: {
       PD: { board: new Matrix4(), heel: 0, lift: 0 },
       PE: { board: new Matrix4(), heel: 0, lift: 0 },
@@ -112,7 +110,7 @@ export function createDrive() {
   };
 }
 
-/** Matriz com origem o, eixo y = yDir e x o mais perto possível de xHint. */
+/** Matrix with origin o, y axis = yDir and x as close as possible to xHint. */
 export function frameFrom(o, yDir, xHint, out) {
   const y = _f.y.copy(yDir).normalize();
   const x = _f.x.copy(xHint).addScaledVector(y, -xHint.dot(y));
@@ -124,18 +122,18 @@ export function frameFrom(o, yDir, xHint, out) {
 const _f = { x: new Vector3(), y: new Vector3(), z: new Vector3() };
 
 /**
- * Cria o esqueleto. `bones[i]` é a matriz de mundo de cada osso (BONES) depois
- * de `solve(drive)`; `joints` guarda as posições das juntas, pra quem quiser.
+ * Create the skeleton. `bones[i]` is the world matrix of each bone (BONES) after
+ * `solve(drive)`; `joints` keeps the joint positions, for whoever wants them.
  */
 export function createSkeleton() {
   const n = BONES.length;
   const bones = Array.from({ length: n }, () => new Matrix4());
-  const pos = Array.from({ length: n }, () => new Vector3());   // origem de cada osso
+  const pos = Array.from({ length: n }, () => new Vector3());   // origin of each bone
   const quat = Array.from({ length: n }, () => new Quaternion());
   const reached = { MD: true, ME: true, PD: true, PE: true };
   const twist = { MD: 0, ME: 0 };
 
-  // pegada: mão -> baqueta (constante)
+  // grip: hand -> stick (constant)
   const grip = {};
   for (const l of HANDS) {
     const s = side(l);
@@ -146,7 +144,7 @@ export function createSkeleton() {
     const m = new Matrix4().makeBasis(x, y, z).setPosition(f);
     grip[l] = { m, inv: m.clone().invert(), q: new Quaternion().setFromRotationMatrix(m), f };
   }
-  // dedos: base, direções e flexões no espaço da mão
+  // fingers: base, directions and flexions in hand space
   const fingers = {};
   for (const l of HANDS) {
     const s = side(l);
@@ -171,7 +169,7 @@ export function createSkeleton() {
     pos[i].setFromMatrixPosition(m);
     quat[i].setFromRotationMatrix(m);
   }
-  /** Osso filho: pai * translação local * rotação local. */
+  /** Child bone: parent * local translation * local rotation. */
   function child(i, parent, offset, euler) {
     mA.makeRotationFromEuler(euler);
     mA.setPosition(offset[0], offset[1], offset[2]);
@@ -201,23 +199,23 @@ export function createSkeleton() {
 
   function solveArm(l, d) {
     const s = side(l), chest = bones[BONE.chest];
-    // clavícula: gira o ombro em volta da junta esterno-clavicular
+    // clavicle: turns the shoulder around the sternoclavicular joint
     SC.set(...scLocal[l]).applyMatrix4(chest);
     const c = d.clav[l];
     tA.copy(clavRest[l]);
-    tA.applyAxisAngle(Z, c.elev * s);          // sobe
-    tA.applyAxisAngle(Y, c.prot * s);          // vai pra frente
+    tA.applyAxisAngle(Z, c.elev * s);          // rises
+    tA.applyAxisAngle(Y, c.prot * s);          // goes forward
     qA.setFromRotationMatrix(chest);
     S.copy(tA).applyQuaternion(qA).add(SC);
 
-    // mão: da baqueta (pegada fixa)
+    // hand: from the stick (fixed grip)
     const st = d.stick[l];
     stickM.makeRotationFromQuaternion(st.quat).setPosition(st.pos);
     handM.multiplyMatrices(stickM, grip[l].inv);
     handQ.setFromRotationMatrix(handM);
     W.setFromMatrixPosition(handM);
 
-    // alvo longe: a clavícula leva o ombro um pouco na direção do pulso
+    // far target: the clavicle brings the shoulder a little toward the wrist
     const a = SKEL.upperArm, b = SKEL.foreArm;
     for (let k = 0; k < 2; k++) {
       const ex = S.distanceTo(W) - (a + b - 0.004);
@@ -226,21 +224,21 @@ export function createSkeleton() {
       S.copy(SC).add(tB);
     }
 
-    // cotovelo: IK com o giro pedido em volta do eixo ombro-pulso
+    // elbow: IK with the requested turn around the shoulder-wrist axis
     axis.subVectors(W, S);
     const dist = axis.length();
     axis.divideScalar(dist || 1);
     ref.copy(DOWN).addScaledVector(axis, -DOWN.dot(axis));
     if (ref.lengthSq() < 1e-6) {
-      // braço na vertical: a referência é as costas do peito
+      // arm vertical: the reference is the back of the chest
       tC.set(0, 0, 1).applyQuaternion(qA);
       ref.copy(tC).addScaledVector(axis, -tC.dot(axis));
     }
     ref.normalize();
-    // pra fora = +X na direita e -X na esquerda: gira o "pendurado" em volta do eixo
+    // outward = +X on the right and -X on the left: turns "hanging" around the axis
     e0.copy(ref).applyAxisAngle(axis, -s * d.swivel[l]);
-    // um pouquinho longe demais (até 2,5%): o braço estica sem ninguém ver; mais
-    // que isso, estica na direção do pulso (a mão continua na baqueta)
+    // slightly too far (up to 2.5%): the arm stretches unnoticed; beyond that, it
+    // stretches toward the wrist (the hand stays on the stick)
     const k = Math.min(STRETCH, Math.max(1, dist / (a + b - 2e-4)));
     reached[l] = solveTwoBone(S, W, a * k, b * k, e0, E, tD);
     hinge.crossVectors(e0, axis).normalize();
@@ -251,8 +249,8 @@ export function createSkeleton() {
     setBone(BONE[`arm.${l}`], mB);
     frameFrom(E, tA.subVectors(tD, E), hinge, mB);
     setBone(BONE[`forearm.${l}`], mB);
-    // torção: quanto a mão gira em volta do antebraço a partir do neutro
-    // (polegar pra cima); metade vai pro osso do meio do antebraço
+    // twist: how much the hand turns around the forearm from neutral (thumb up);
+    // half goes to the forearm's middle bone
     const fq = quat[BONE[`forearm.${l}`]];
     qB.copy(fq).invert().multiply(handQ);
     const tw = 2 * Math.atan2(qB.y, qB.w) - TWIST0 * s;
@@ -265,17 +263,17 @@ export function createSkeleton() {
     setBone(BONE[`hand.${l}`], handM);
     setBone(BONE[`stick.${l}`], stickM);
 
-    // dedos: base fixa na mão, flexão da pegada (+ aperto)
+    // fingers: base fixed on the hand, flexion from the grip (+ squeeze)
     const sq = d.grip[l];
     for (const f of fingers[l]) {
-      // frame da falange: y = direção do dedo, x = eixo da flexão (o x da mão)
+      // phalanx frame: y = finger direction, x = flexion axis (the hand's x)
       tB.copy(f.dir);
       if (f.spread) tB.applyAxisAngle(Z, f.spread);
       mB.copy(frameFrom(f.base, tB, X, mA));
       let parent = handM;
       for (let k = 0; k < 3; k++) {
         const flex = f.flex[k] * (1 + (f.name === "thumb" ? 0.1 : 0.12) * sq);
-        // gira em volta do x local pra palma (-z)
+        // turns around local x toward the palm (-z)
         mA.makeRotationAxis(X, -flex);
         if (k === 0) mB.multiply(mA);
         else mB.makeTranslation(0, f.len[k - 1], 0).multiply(mA);
@@ -294,8 +292,8 @@ export function createSkeleton() {
   const ankle = new Vector3(), ball = new Vector3(), toe = new Vector3(), kneePole = new Vector3();
   function solveLeg(l, d) {
     const s = side(l), f = d.foot[l];
-    // sola deitada na prancha, calcanhar em z = heel; levantar o calcanhar gira
-    // a sola em volta da planta, e os dedos continuam deitados na prancha
+    // sole flat on the board, heel at z = heel; lifting the heel turns the sole around
+    // the ball, and the toes stay flat on the board
     flat.copy(f.board).multiply(mA.makeTranslation(0, 0, f.heel));
     sole.copy(flat);
     if (f.lift) {
@@ -331,12 +329,12 @@ export function createSkeleton() {
 
   return {
     bones, pos, quat, reached, twist, grip, solve, bone: BONE,
-    /** Posição de mundo de um osso (atalho). */
+    /** World position of a bone (shortcut). */
     at: (name, out = new Vector3()) => out.copy(pos[BONE[name]]),
   };
 }
 
-/** Ponta da baqueta (centro da bolinha) no mundo, dado o comando. */
+/** Stick tip (center of the ball) in the world, given the drive. */
 export function stickTip(stick, out = new Vector3()) {
   return out.set(0, SKEL.stickFront, 0).applyQuaternion(stick.quat).add(stick.pos);
 }

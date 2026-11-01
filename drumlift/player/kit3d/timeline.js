@@ -1,13 +1,13 @@
-// Linha do tempo da música: notas limpas e ordenadas, relógio de batidas,
-// distribuição dos tons pelo kit e golpes por membro. Tudo é calculado uma
-// vez ao receber o song.json; a animação só faz buscas binárias aqui.
+// The song's timeline: clean sorted notes, beat clock, toms spread over the kit and
+// strokes per limb. All computed once when song.json arrives; the animation only does
+// binary searches here.
 
 import { assignSticking } from "./sticking.js";
 
 export const PIECES = ["crash", "ride", "hihat", "snare", "tom", "kick"];
 const PIECE_SET = new Set(PIECES);
 
-// Peças físicas do kit. Só existe uma classe de tom na tab, mas o kit tem três.
+// Physical pieces. The tab has only one tom class, but the kit has three.
 export const INSTANCES = ["kick", "snare", "hihat", "tom1", "tom2", "floor", "crash", "ride"];
 export const INSTANCE_PIECE = {
   kick: "kick", snare: "snare", hihat: "hihat",
@@ -15,13 +15,13 @@ export const INSTANCE_PIECE = {
 };
 export const LIMBS = ["MD", "ME", "PD", "PE"];
 
-// Ordem de importância quando há mais notas do que mãos.
+// Order of importance when there are more notes than hands.
 export const PRIORITY = { crash: 0, ride: 1, hihat: 2, snare: 3, tom: 4, kick: 5 };
 
 const TOMS_HIGH_TO_LOW = ["tom1", "tom2", "floor"];
 const TOM_INST = new Set(TOMS_HIGH_TO_LOW);
 
-/** Primeiro índice com key(arr[i]) > x. */
+/** First index with key(arr[i]) > x. */
 export function upperBound(arr, x, key = (v) => v.t) {
   let lo = 0, hi = arr.length;
   while (lo < hi) {
@@ -31,10 +31,10 @@ export function upperBound(arr, x, key = (v) => v.t) {
   return lo;
 }
 
-/** Índice do último elemento com tempo <= x, ou -1. */
+/** Index of the last element with time <= x, or -1. */
 export const lastAtOrBefore = (arr, x, key) => upperBound(arr, x, key) - 1;
 
-/** Relógio de batidas: posição fracionária e duração local de 1 tempo. */
+/** Beat clock: fractional position and local length of 1 beat. */
 export function makeBeatClock(song) {
   const beats = (Array.isArray(song?.beats) ? song.beats : [])
     .filter(Number.isFinite).slice().sort((a, b) => a - b);
@@ -74,7 +74,7 @@ function cleanNotes(song) {
       step: Number.isFinite(n.step) ? n.step : null,
       vel: Math.min(1, Math.max(0, Number.isFinite(n.vel) ? n.vel : 0.8)),
       ghost: !!n.ghost,
-      // tom: a tab só diz "tom"; se a nota já disser qual (MIDI), respeita
+      // tom: the tab only says "tom"; if the note says which (MIDI), respect it
       inst: n.piece === "tom" ? (TOM_INST.has(n.inst) ? n.inst : null) : n.piece,
       limb: null,
     });
@@ -83,8 +83,8 @@ function cleanNotes(song) {
   return out;
 }
 
-// Sequência de tons com até 1 tempo entre notas: do mais agudo pro mais grave.
-// Tom isolado vai pro tom 2.
+// Run of toms with up to 1 beat between notes: from highest to lowest.
+// A lone tom goes to tom 2.
 function assignToms(notes, clock) {
   const toms = notes.filter((n) => n.piece === "tom" && !n.inst);
   let start = 0;
@@ -97,7 +97,7 @@ function assignToms(notes, clock) {
   }
 }
 
-// Notas no mesmo passo tocam juntas. Sem `step`, junta as que caem no mesmo instante.
+// Notes on the same step play together. Without `step`, groups those at the same instant.
 function groupNotes(notes) {
   const byKey = new Map();
   for (const n of notes) {
@@ -111,8 +111,8 @@ function groupNotes(notes) {
 }
 
 /**
- * Pré-processa o song.json: devolve as notas com peça física (`inst`) e membro
- * (`limb`, ou null se nenhum membro toca), os golpes por membro e por peça.
+ * Preprocess song.json: returns the notes with physical piece (`inst`) and limb
+ * (`limb`, or null if no limb plays), plus strokes per limb and per piece.
  */
 export function prepareSong(song) {
   const clock = makeBeatClock(song);
@@ -125,7 +125,7 @@ export function prepareSong(song) {
   for (const n of notes) {
     if (!n.limb) continue;
     const list = limbs[n.limb], prev = list[list.length - 1];
-    if (prev && Math.abs(prev.t - n.t) < 1e-6) continue; // mesmo membro, mesmo instante
+    if (prev && Math.abs(prev.t - n.t) < 1e-6) continue; // same limb, same instant
     list.push({ t: n.t, inst: n.inst, vel: n.vel, ghost: n.ghost, piece: n.piece });
   }
   for (const k of LIMBS) limbs[k].sort((a, b) => a.t - b.t);
@@ -133,7 +133,7 @@ export function prepareSong(song) {
   const instHits = Object.fromEntries(INSTANCES.map((k) => [k, []]));
   for (const n of notes) instHits[n.inst].push({ t: n.t, vel: n.ghost ? 0.15 : n.vel, limb: n.limb });
 
-  // notas do pedal do chimbal (se a música tiver, como as da base MMIP)
+  // hi-hat pedal notes (if the song has them, like the MMIP ones)
   const pedal = (Array.isArray(song?.pedal) ? song.pedal : []).filter(Number.isFinite).sort((a, b) => a - b);
   return { notes, groups, limbs, instHits, clock, pedal, duration: Number(song?.duration) || 0 };
 }
