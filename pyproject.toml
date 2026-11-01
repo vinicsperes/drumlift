@@ -42,4 +42,4 @@ build-backend = "setuptools.build_meta"
 include = ["drumlift*"]
 
 [tool.setuptools.package-data]
-drumlift = ["player/*", "player/app/*", "player/kit3d/*", "player/kit3d/moves/*", "player/vendor/*", "player/vendor/fonts/*"]
+drumlift = ["player/*", "player/app/*", "player/kit3d/*", "player/kit3d/moves/*", "player/vendor/*"]
