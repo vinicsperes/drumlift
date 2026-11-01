@@ -2,6 +2,8 @@
 
 Song in, drum tab out, played back in time with the recording so you can check it by ear.
 
+![The player: a motion capture drummer playing the tab, with the note lane below](docs/demo.gif)
+
 ```
 song ──► Demucs ──► isolated drums ──► ADTOF ──► notes (kick, snare, hi-hat, tom, cymbal)
   │                                                       │
@@ -50,9 +52,10 @@ A 4-minute song takes 2 to 3 minutes on a CPU. It also accepts a link if `yt-dlp
 
 ## Player
 
-A 3D drummer plays the tab with the song, with the hand for each note worked out by rules.
+A motion capture drummer plays the tab with the song. Red is the right hand and blue the left, worked
+out by rules, and each piece lights up in the color of the limb that hit it.
 Toggle tab and original with `A`, mute a piece by clicking its name, loop with `L`, slow down
-with `[` and `]`, and fix notes in the full tab with `T`.
+with `[` and `]`, and fix notes in the full tab with `T`. Details in [`docs/stage.md`](docs/stage.md).
 
 ## Accuracy
 
@@ -75,6 +78,5 @@ The code is MIT. Dependencies have their own terms:
   ([ADTOF](https://github.com/MZehren/ADTOF), [ADTOF-pytorch](https://github.com/xavriley/ADTOF-pytorch)).
   It does the transcription, so this applies to anyone using the project.
 - **Demucs**, **beat_this**, **Three.js**, **fflate**: MIT.
-- **Instrument Serif** font: SIL OFL 1.1.
 - **Stroke library**, optional and not in the repo: built from [MMIP](https://mmip.cs.ucy.ac.cy),
   CC BY-NC-SA 4.0, **non-commercial only**.
