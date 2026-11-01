@@ -3,6 +3,29 @@
 Pega uma música, isola a bateria, gera a tablatura e toca a tab de volta
 no andamento da música, pra você conferir de ouvido se ela bate com a gravação.
 
+## Status: experimento encerrado
+
+Este projeto não está mais em desenvolvimento. O código continua aqui e funciona como
+descrito abaixo, mas parou de receber mudanças.
+
+**A ideia:** testar se dava pra ir de qualquer música até uma tab de bateria boa o bastante
+pra estudar, juntando modelos prontos (separação, transcrição e detecção de batidas) a uma
+grade que segue o andamento real, e conferir o resultado num player 3D com um baterista
+tocando a tab.
+
+**O que deu certo:** o andamento e o início de compasso saem certos na maioria das músicas,
+e o bumbo, a caixa e os tons são bem reconhecidos. Contra tabs de referência de 6 músicas, o
+acerto de nota escrita no lugar certo vai de 75% a 99% (F1), dependendo da música.
+
+**Onde travou:** nota certa não é tab certa. Na In Bloom, por exemplo, o acerto é de 89%,
+mas só 8% dos compassos saem idênticos à referência. A maior parte do erro que sobra é do modelo de transcrição: ele só conhece 5 classes, não separa chimbal aberto
+de fechado e não tem chimbal de pé. Ajustar as etapas em volta dele já não resolve isso.
+
+**Por que parou:** o próximo passo real é treinar um modelo de transcrição, e isso é outro
+projeto, com outro foco. A ideia foi pivotada pra lá.
+
+## Como funciona
+
 ```
 música ──► Demucs ──► bateria isolada ──► ADTOF ──► notas (bumbo, caixa, chimbal, tom, pratos)
    │                                                       │
